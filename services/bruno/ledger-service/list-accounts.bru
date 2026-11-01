@@ -1,0 +1,15 @@
+meta {
+  name: List accounts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{ledgerServiceUrl}}/api/ledger/accounts
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+}

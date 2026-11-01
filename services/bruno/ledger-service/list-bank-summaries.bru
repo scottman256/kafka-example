@@ -1,0 +1,15 @@
+meta {
+  name: List bank summaries
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{ledgerServiceUrl}}/api/ledger/banks
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+}

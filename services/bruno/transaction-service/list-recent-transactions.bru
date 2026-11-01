@@ -1,0 +1,15 @@
+meta {
+  name: List recent transactions
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{transactionServiceUrl}}/api/transactions
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+}

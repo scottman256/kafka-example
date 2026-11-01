@@ -1,0 +1,2 @@
+# Local secrets for this collection, such as API tokens. Bruno reads them as {{process.env.NAME}}.
+.env

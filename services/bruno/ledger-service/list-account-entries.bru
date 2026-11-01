@@ -1,0 +1,19 @@
+meta {
+  name: List account entries
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{ledgerServiceUrl}}/api/ledger/accounts/{{accountName}}/entries
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Uses `accountName` (the payee) from **Create transaction**. Any account name works, matched ignoring case.
+}

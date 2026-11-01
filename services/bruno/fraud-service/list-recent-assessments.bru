@@ -1,0 +1,15 @@
+meta {
+  name: List recent assessments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{fraudServiceUrl}}/api/risk/assessments
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+}

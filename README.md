@@ -66,6 +66,9 @@ rejected by the other databases.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the Kafka and H2 data.
 
+If you'd rather use an API client than curl, [services/bruno](services/bruno/README.md) has a
+[Bruno](https://www.usebruno.com) collection with every API.
+
 ## Try the transaction service
 
 ```bash

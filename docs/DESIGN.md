@@ -331,7 +331,8 @@ kafka-example/
 ├── services/
 │   ├── transaction-service/
 │   ├── fraud-service/
-│   └── ledger-service/
+│   ├── ledger-service/
+│   └── bruno/                   # Bruno API collection for every service
 ├── frontend/
 └── scripts/
     └── demo.sh / demo.ps1       # sends sample transactions
