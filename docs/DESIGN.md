@@ -272,7 +272,8 @@ the browser has no CORS issues.
 - **Java 17** (matches the locally installed JDK; Docker images use Eclipse Temurin 17)
 - **Spring Boot 4.1.x**, **Spring for Apache Kafka**, Spring Data JPA, Bean Validation,
   Flyway, Spring Boot Actuator (health checks)
-- **Lombok**, used only for `@Getter` on JPA entities
+- **Lombok**, used only for `@Getter` and `@NoArgsConstructor` on JPA entities and
+  `@RequiredArgsConstructor` for constructor injection
 - **Gradle (Kotlin DSL)** with the Gradle wrapper, one project per service under `services/`.
   Gradle doesn't need to be installed locally.
 - **Tests:** JUnit 5 + Mockito for unit tests; `@EmbeddedKafka` / Testcontainers for Kafka

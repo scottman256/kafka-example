@@ -18,7 +18,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
  * The screening result for one transaction, together with the transaction details the
@@ -27,6 +29,7 @@ import lombok.Getter;
 @Entity
 @Table(name = "risk_assessments")
 @Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RiskAssessment {
 
 	@Id
@@ -65,9 +68,6 @@ public class RiskAssessment {
 	private long kafkaOffset;
 
 	private Instant assessedAt;
-
-	protected RiskAssessment() {
-	}
 
 	public RiskAssessment(TransactionCreatedEvent transaction, RiskScore riskScore, RecordPosition recordPosition,
 			Instant assessedAt) {

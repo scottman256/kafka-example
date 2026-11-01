@@ -10,13 +10,16 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 
 @Entity
 @Table(name = "kafka_publish_log")
 @Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class KafkaPublishLogEntry {
 
 	static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
@@ -47,9 +50,6 @@ public class KafkaPublishLogEntry {
 	private String errorMessage;
 
 	private Instant loggedAt;
-
-	protected KafkaPublishLogEntry() {
-	}
 
 	public KafkaPublishLogEntry(TransactionCreatedEvent event, ProducerRecord<String, String> producerRecord) {
 		this.eventId = event.eventId();

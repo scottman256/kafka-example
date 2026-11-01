@@ -3,6 +3,8 @@ package com.kafkaexample.fraud.screening;
 import java.time.Duration;
 import java.time.Instant;
 
+import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
  * payer-keyed partitioning guarantees.
  */
 @Component
+@RequiredArgsConstructor
 class HighVelocityCheck implements FraudCheck {
 
 	static final Duration WINDOW = Duration.ofMinutes(10);
@@ -18,10 +21,6 @@ class HighVelocityCheck implements FraudCheck {
 	static final int EARLIER_PAYMENTS_THRESHOLD = 3;
 
 	private final RiskAssessmentRepository riskAssessmentRepository;
-
-	HighVelocityCheck(RiskAssessmentRepository riskAssessmentRepository) {
-		this.riskAssessmentRepository = riskAssessmentRepository;
-	}
 
 	@Override
 	public RiskRule rule() {

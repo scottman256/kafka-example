@@ -2,18 +2,17 @@ package com.kafkaexample.fraud.screening;
 
 import java.math.BigDecimal;
 
+import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 class NewPayeeHighValueCheck implements FraudCheck {
 
 	static final BigDecimal HIGH_VALUE_THRESHOLD = new BigDecimal("1000.00");
 
 	private final RiskAssessmentRepository riskAssessmentRepository;
-
-	NewPayeeHighValueCheck(RiskAssessmentRepository riskAssessmentRepository) {
-		this.riskAssessmentRepository = riskAssessmentRepository;
-	}
 
 	@Override
 	public RiskRule rule() {

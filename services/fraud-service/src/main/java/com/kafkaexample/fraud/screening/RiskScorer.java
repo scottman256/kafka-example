@@ -2,16 +2,15 @@ package com.kafkaexample.fraud.screening;
 
 import java.util.List;
 
+import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 class RiskScorer {
 
 	private final List<FraudCheck> fraudChecks;
-
-	RiskScorer(List<FraudCheck> fraudChecks) {
-		this.fraudChecks = fraudChecks;
-	}
 
 	RiskScore score(TransactionCreatedEvent transaction) {
 		List<RiskRule> triggeredRules = fraudChecks.stream()

@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.kafkaexample.transaction.domain.SourceBanks;
 import com.kafkaexample.transaction.domain.TransactionService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,13 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/transactions")
+@RequiredArgsConstructor
 public class TransactionController {
 
 	private final TransactionService transactionService;
-
-	public TransactionController(TransactionService transactionService) {
-		this.transactionService = transactionService;
-	}
 
 	@PostMapping
 	public ResponseEntity<TransactionResponse> create(@Valid @RequestBody CreateTransactionRequest request) {
