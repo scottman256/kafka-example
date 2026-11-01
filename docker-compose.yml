@@ -108,6 +108,38 @@ services:
       start_interval: 3s
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # fraud-service: Kafka consumer (group fraud-service) that risk-scores every
+  # transaction. It owns frauddb and does not depend on the other services.
+  # ---------------------------------------------------------------------------
+  fraud-service:
+    build:
+      context: ./services/fraud-service
+    image: kafka-example/fraud-service:latest
+    environment:
+      SERVER_PORT: 8082
+      DB_URL: jdbc:h2:tcp://h2-db:9090/${FRAUD_DB_NAME}
+      DB_USER: ${FRAUD_DB_USER}
+      DB_PASSWORD: ${FRAUD_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRANSACTIONS_TOPIC: ${TRANSACTIONS_TOPIC}
+      DEAD_LETTER_TOPIC: ${TRANSACTIONS_TOPIC}.fraud-service.DLT
+    ports:
+      - "127.0.0.1:${FRAUD_SERVICE_HOST_PORT}:8082"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      h2-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 3s
+    restart: unless-stopped
+
 volumes:
   kafka-data:
   h2-data:

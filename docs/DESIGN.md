@@ -164,34 +164,59 @@ Dependencies only point in that direction.
 rules, and flag the risky ones for review. It cares about *patterns of behaviour*, not money
 movement.
 
-**Consumer group:** `fraud-service`
+**Consumer group:** `fraud-service`. It runs 3 listener threads, one per partition. A new group
+starts from the earliest offset, so it screens the topic's whole history on first start.
 
-**Rules** (each adds to a 0–100 risk score)
+**Rules** (each adds points; the score is capped at 100)
 | Rule | Trigger | Points |
 |---|---|---|
 | `LARGE_AMOUNT` | amount ≥ $10,000 (the US Currency Transaction Report threshold) | 40 |
 | `POSSIBLE_STRUCTURING` | $9,000 ≤ amount < $10,000 (splitting payments to stay under the threshold) | 30 |
-| `HIGH_VELOCITY` | payer has ≥ 3 other transactions within the last 10 minutes | 30 |
-| `SELF_PAYMENT` | payer equals payee (ignoring case) | 50 |
+| `HIGH_VELOCITY` | payer made ≥ 3 other payments in the 10 minutes before this one | 30 |
+| `SELF_PAYMENT` | payer equals payee (ignoring case and surrounding spaces) | 50 |
 | `NEW_PAYEE_HIGH_VALUE` | first payment from this payer to this payee, and amount > $1,000 | 15 |
-| `DATE_ANOMALY` | transaction date is in the future or more than 90 days ago | 20 |
+| `DATE_ANOMALY` | transaction date is more than 1 day after the event date, or more than 90 days before it | 20 |
 
-**Risk level:** 0–29 `LOW` (CLEARED), 30–69 `MEDIUM` (FLAGGED_FOR_REVIEW), 70+ `HIGH` (FLAGGED_HIGH_RISK).
+Each rule is its own small class behind a `FraudCheck` interface, and `RiskScorer` runs every
+`FraudCheck` bean. Adding a rule means adding one class.
 
-**State:** keeps its own `screened_transactions` history (payer, payee, amount, time). The
-velocity and new-payee rules use only this data, never the transaction-service DB.
+**Event time, not processing time:** the velocity and date rules measure against the event's
+`occurredAt`, not the clock. When the service catches up on a backlog, it therefore gives
+the same answers it would have given live. The velocity rule relies on each payer's events
+arriving in order, which payer-keyed partitioning guarantees. The 1-day grace in the date rule
+covers users whose local date is ahead of UTC.
 
-**Idempotency:** a `processed_events(event_id PK)` row is written in the same DB transaction as
-the assessment. If Kafka redelivers a message, it is skipped.
+**Risk level:** 0–29 `LOW`, 30–69 `MEDIUM`, 70+ `HIGH`. `MEDIUM` and `HIGH` are *flagged*.
+
+**State:** each `risk_assessments` row keeps the transaction details the rules look up (normalized
+payer and payee, amount, `occurredAt`). The history checks query only this service's own
+database, never transaction-service.
+
+**Idempotency:** `risk_assessments.event_id` is `UNIQUE`, and the service checks it before
+scoring, in the same DB transaction that saves the assessment. Every event produces exactly
+one assessment, so the assessment itself is the record of what has been processed, and no
+separate `processed_events` table is needed. A redelivered event is skipped.
+
+**Event contract:** the service has its own `TransactionCreatedEvent` record holding only
+the fields it uses. It is a tolerant reader: unknown fields are ignored, and missing required
+fields are rejected.
+
+**Error handling:**
+- Records that can never be screened (malformed JSON or missing fields) go **straight** to
+  `transactions.created.fraud-service.DLT`.
+- Any other failure is retried 3 times (0.5s, 1s, 2s) and then sent to the dead-letter topic.
+- Dead letters keep their partition number, key, value and Spring's `kafka_dlt-*` headers
+  (exception, original topic, partition, offset and group). Each one is logged as a warning.
 
 **API**
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/risk/assessments` | Recent assessments (score, level, rules triggered, partition/offset consumed) |
-| GET | `/api/risk/assessments/{transactionId}` | Assessment for one transaction |
+| GET | `/api/risk/assessments` | 50 most recent assessments: score, level, `flagged`, triggered rules with points, and the partition/offset consumed |
+| GET | `/api/risk/assessments/{transactionId}` | Assessment for one transaction (404 until it has been screened) |
 | GET | `/api/risk/alerts` | Flagged assessments only (MEDIUM and HIGH) |
 
-**Tables (`frauddb`):** `risk_assessments`, `triggered_rules`, `screened_transactions`, `processed_events`
+**Tables (`frauddb`):** `risk_assessments` (indexed on payer + time and payer + payee for the
+history checks), and `triggered_rules` (assessment id + rule code).
 
 ### 4.3 ledger-service (consumer #2) — "General Ledger & Balances"
 
