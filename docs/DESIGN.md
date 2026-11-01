@@ -1,0 +1,336 @@
+# Kafka Payments Demo — System Design
+
+A small, realistic payments pipeline that shows event-driven microservices with Apache Kafka.
+A user submits a financial transaction in a React page. A producer service records it and
+publishes an event. Two independent consumer services each react to that event for a
+different business purpose.
+
+---
+
+## 1. Architecture at a glance
+
+```
+                       ┌──────────────────────────────┐
+  Browser ───────────► │ frontend  (nginx + React)    │  :3000
+                       │  /api/transactions → txn svc │
+                       │  /api/risk         → fraud   │
+                       │  /api/ledger       → ledger  │
+                       └───────┬─────────┬────────┬───┘
+                    REST       │         │        │   REST (read-only)
+                               ▼         │        │
+                 ┌───────────────────┐   │        │
+                 │ transaction-svc   │   │        │
+                 │ (PRODUCER) :8081  │   │        │
+                 └──┬─────────────┬──┘   │        │
+          writes    │             │ publishes      │
+                    ▼             ▼                │
+             ┌───────────┐  ┌───────────────────────────┐
+             │  h2-db    │  │ kafka (KRaft, 1 broker)   │
+             │ TCP :9090 │  │ topic: transactions.created│
+             │ (3 DBs)   │  │ 3 partitions, key = payer │
+             └───────────┘  └──────┬──────────────┬─────┘
+                ▲     ▲            │ group:       │ group:
+                │     │            │ fraud-service│ ledger-service
+                │     │            ▼              ▼
+                │     │   ┌────────────────┐ ┌────────────────┐
+                │     └───│ fraud-service  │ │ ledger-service │
+                │         │ (CONSUMER) 8082│ │ (CONSUMER) 8083│
+                └─────────┴────────────────┘ └────────────────┘
+```
+
+### The 6 containers
+
+| # | Container             | Image / build                        | Host port(s)        | Role |
+|---|-----------------------|--------------------------------------|---------------------|------|
+| 1 | `frontend`            | Node build → nginx                   | 3000                | Serves React SPA; reverse-proxies `/api/*` to the 3 services |
+| 2 | `transaction-service` | Spring Boot (multi-stage Dockerfile) | 8081                | REST intake, persistence, Kafka **producer** |
+| 3 | `fraud-service`       | Spring Boot                          | 8082                | Kafka **consumer** — risk & compliance screening |
+| 4 | `ledger-service`      | Spring Boot                          | 8083                | Kafka **consumer** — double-entry ledger & balances |
+| 5 | `h2-db`               | Custom: Temurin 17 JRE + H2 2.4.240 in server mode | 9090 (TCP), 8090 (web console) | Shared DB *server*, separate database per service |
+| 6 | `kafka`               | `apache/kafka:4.2.2` in KRaft mode (no ZooKeeper) | 29092 (host listener) | Message broker |
+
+Host ports bind to `127.0.0.1` only. Containers reach Kafka at `kafka:9092` and H2 at
+`h2-db:9090`.
+
+---
+
+## 2. Microservice rules this project follows
+
+1. **Database per service.** One H2 *server* container, but three separate databases
+   (`transactiondb`, `frauddb`, `ledgerdb`), each with its own credentials. No service
+   reads another service's database.
+2. **No service-to-service HTTP calls.** The services talk to each other only through Kafka.
+3. **No shared code library.** Each service has its own copy of the event contract (a Java
+   record). Producer type headers are turned off (`spring.json.add.type.headers=false`), so
+   consumers don't depend on the producer's class names.
+4. **Independently deployable.** Each service is its own Gradle project, with its own
+   wrapper, Dockerfile, config, Flyway migrations and tests.
+5. **Each service owns its read API.** The UI gets each service's data from that service,
+   routed through nginx. There is no shared backend-for-frontend.
+
+---
+
+## 3. Event contract
+
+**Topic:** `transactions.created` — 3 partitions, replication factor 1 (single broker).
+**Key:** normalized payer name (lower-cased, trimmed). All of one payer's transactions land on
+the same partition, so they are consumed in order. The fraud velocity rule and ledger
+ordering depend on this.
+**Format:** JSON. Money uses `BigDecimal` end-to-end and is never a `double`.
+
+```json
+{
+  "eventId": "4f7c2e1a-…",            // unique per event – consumers use it for idempotency
+  "eventType": "TransactionCreated",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-31T14:22:05Z",
+  "transactionId": "9b1d…",
+  "transactionDate": "2026-10-30",
+  "payer": "Alice Smith",
+  "payee": "Bob's Hardware",
+  "amount": 125.50,
+  "currency": "USD",
+  "memo": "Lumber for deck",
+  "sourceBank": "First National Bank"
+}
+```
+
+**Headers:** `eventType`, `eventVersion`, `correlationId` (= transactionId).
+
+**Dead-letter topics:** each consumer has a `DefaultErrorHandler` that retries with backoff and
+then sends the message to its own DLT (`transactions.created.fraud-service.DLT`,
+`transactions.created.ledger-service.DLT`). A bad message never blocks a partition.
+Each DLT has the same partition count as the source topic, because Spring's
+`DeadLetterPublishingRecoverer` publishes to the same partition number by default.
+
+**Provisioning:** topics are created explicitly at broker startup
+(`infra/kafka/create-topics.sh`), and broker auto-creation is **disabled**. The broker only
+reports healthy once every topic exists, so services never start before their topics.
+
+---
+
+## 4. Service designs
+
+### 4.1 transaction-service (producer) — "Payment Intake"
+
+**Purpose:** Accept transactions from the UI, store them as the system of record, and
+publish `TransactionCreated` events.
+
+**API**
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/transactions` | Validate, save, publish. Returns the transaction and its Kafka metadata. |
+| GET  | `/api/transactions` | Most recent transactions (newest first, limit 50) |
+| GET  | `/api/transactions/{id}` | One transaction with its publish record |
+
+**Validation:** all fields required except memo; amount > 0 with at most 2 decimal places;
+payer and payee 2–100 characters; memo ≤ 255 characters; sourceBank must be in the known
+bank list.
+
+**Flow**
+1. Save `transaction` row.
+2. Build the event and send it with `KafkaTemplate`. Wait for the broker ack (bounded timeout).
+3. Write a `kafka_publish_log` row with the exact JSON payload sent plus the returned
+   `RecordMetadata`: topic, partition, offset, key and broker timestamp. Status is
+   `PUBLISHED`, or `FAILED` with the error.
+4. Return 201 with the transaction and the Kafka metadata. The UI shows this metadata.
+
+**Producer config:** `acks=all`, `enable.idempotence=true`, retries with delivery timeout.
+
+**Tables (`transactiondb`)**
+- `transactions` (id, transaction_date, payer, payee, amount, currency, memo, source_bank, created_at)
+- `kafka_publish_log` (event_id, transaction_id FK, topic, partition, offset, message_key,
+  kafka_timestamp, payload, status, error_message, published_at)
+
+> Known trade-off: writing to the DB and then to Kafka is a "dual write". If the process
+> crashes between the two steps, the DB and Kafka can disagree. The production fix is the
+> **Transactional Outbox** pattern. That is listed as an optional enhancement (§8) and
+> called out in the README.
+
+### 4.2 fraud-service (consumer #1) — "Risk & Compliance Screening"
+
+**Purpose:** Score every transaction in real time against fraud and AML (anti-money-laundering)
+rules, and flag the risky ones for review. It cares about *patterns of behaviour*, not money
+movement.
+
+**Consumer group:** `fraud-service`
+
+**Rules** (each adds to a 0–100 risk score)
+| Rule | Trigger | Points |
+|---|---|---|
+| `LARGE_AMOUNT` | amount ≥ $10,000 (the US Currency Transaction Report threshold) | 40 |
+| `POSSIBLE_STRUCTURING` | $9,000 ≤ amount < $10,000 (splitting payments to stay under the threshold) | 30 |
+| `HIGH_VELOCITY` | payer has ≥ 3 other transactions within the last 10 minutes | 30 |
+| `SELF_PAYMENT` | payer equals payee (ignoring case) | 50 |
+| `NEW_PAYEE_HIGH_VALUE` | first payment from this payer to this payee, and amount > $1,000 | 15 |
+| `DATE_ANOMALY` | transaction date is in the future or more than 90 days ago | 20 |
+
+**Risk level:** 0–29 `LOW` (CLEARED), 30–69 `MEDIUM` (FLAGGED_FOR_REVIEW), 70+ `HIGH` (FLAGGED_HIGH_RISK).
+
+**State:** keeps its own `screened_transactions` history (payer, payee, amount, time). The
+velocity and new-payee rules use only this data, never the transaction-service DB.
+
+**Idempotency:** a `processed_events(event_id PK)` row is written in the same DB transaction as
+the assessment. If Kafka redelivers a message, it is skipped.
+
+**API**
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/risk/assessments` | Recent assessments (score, level, rules triggered, partition/offset consumed) |
+| GET | `/api/risk/assessments/{transactionId}` | Assessment for one transaction |
+| GET | `/api/risk/alerts` | Flagged assessments only (MEDIUM and HIGH) |
+
+**Tables (`frauddb`):** `risk_assessments`, `triggered_rules`, `screened_transactions`, `processed_events`
+
+### 4.3 ledger-service (consumer #2) — "General Ledger & Balances"
+
+**Purpose:** Do the accounting. Each transaction becomes a balanced double-entry journal
+entry. The service keeps a running balance for every party and a funds-outflow total for
+every source bank. It cares about *money movement*, not risk.
+
+**Consumer group:** `ledger-service`
+
+**Posting logic** (one journal entry per event, two lines that must sum to zero)
+- Line 1: payer account **DEBIT** −amount (funds out)
+- Line 2: payee account **CREDIT** +amount (funds in)
+- Accounts are created on first sight. The balance update and the journal insert happen in
+  one DB transaction, together with the `processed_events` idempotency row.
+- The bank summary adds the amount and a count to the transaction's `sourceBank`.
+
+**API**
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/ledger/accounts` | All accounts with current balance and entry count |
+| GET | `/api/ledger/accounts/{name}/entries` | Journal lines for one account |
+| GET | `/api/ledger/banks` | Total outflow and count per source bank |
+| GET | `/api/ledger/trial-balance` | Sum of all balances. It must be 0.00, which proves the ledger is consistent. |
+
+**Tables (`ledgerdb`):** `accounts`, `journal_entries`, `journal_lines`, `bank_summaries`, `processed_events`
+
+> Design note: the two consumers are deliberately independent (fan-out). In a real bank the
+> ledger might only post after fraud approval. That would be a follow-on event
+> (`transactions.risk-assessed`) and is listed as an optional enhancement (§8).
+
+---
+
+## 5. Frontend (single page)
+
+React + Vite. Built into static files and served by nginx, which also proxies the APIs, so
+the browser has no CORS issues.
+
+**Layout**
+- **Transaction form (top):** Date (defaults to today), Payer, Payee, Amount, Memo, Source
+  Bank (dropdown). Client-side validation matches the server rules.
+- **Submit result card:** transaction ID plus Kafka metadata: topic, partition, offset, key.
+- **Three live panels** that poll every 2 seconds and show the fan-out working:
+  1. *Transactions* (transaction-service): what was published.
+  2. *Risk Screening* (fraud-service): score, risk level, rules triggered, colour-coded.
+  3. *Ledger* (ledger-service): account balances, bank outflows, trial balance.
+- **"Demo scenarios" buttons:** pre-fill the form with cases that trigger specific fraud
+  rules, such as a $9,500 payment, a self-payment or a velocity burst.
+
+---
+
+## 6. Tech stack & conventions
+
+- **Java 17** (matches the locally installed JDK; Docker images use Eclipse Temurin 17)
+- **Spring Boot 4.1.x**, **Spring for Apache Kafka**, Spring Data JPA, Bean Validation,
+  Flyway, Spring Boot Actuator (health checks)
+- **Gradle (Kotlin DSL)** with the Gradle wrapper, one project per service under `services/`.
+  Gradle doesn't need to be installed locally.
+- **Tests:** JUnit 5 + Mockito for unit tests; `@EmbeddedKafka` / Testcontainers for Kafka
+  integration tests
+- **React + TypeScript + Vite** (latest stable at build time), plain CSS (no UI framework,
+  to keep it light)
+
+**Pinned versions that must agree**
+| Component | Version | Why it's pinned |
+|---|---|---|
+| Kafka broker | 4.2.2 | Same as the `kafka-clients` version Spring Boot 4.1.x ships |
+| H2 server | 2.4.240 | Same as Spring Boot 4.1.x's managed H2 driver; the TCP protocol expects matching versions |
+- **Docker Compose:** health checks on every container; `depends_on: condition: service_healthy`
+  controls startup order; a named volume keeps H2 data
+
+**Repository layout**
+```
+kafka-example/
+├── docker-compose.yml
+├── .env                         # ports, DB credentials, topic names
+├── README.md
+├── docs/DESIGN.md
+├── infra/
+│   ├── h2/                      # H2 server image + DB/user initialisation
+│   └── kafka/                   # topic creation + health check scripts
+├── services/
+│   ├── transaction-service/
+│   ├── fraud-service/
+│   └── ledger-service/
+├── frontend/
+└── scripts/
+    └── demo.sh / demo.ps1       # sends sample transactions
+```
+
+---
+
+## 7. Implementation plan — 6 sequential parts
+
+Each part ends in a working, testable state. Later parts depend only on earlier ones.
+
+### Part 1 — Infrastructure foundation (Kafka + H2 + Compose skeleton)
+- Repo layout, `.env`, root `README.md` stub, `.gitignore`
+- `docker-compose.yml` with `kafka` (KRaft, internal and host listeners, health check) and
+  `h2-db` (custom image, TCP + web console, volume, health check)
+- Create the topic `transactions.created` (3 partitions) and both DLTs
+- H2 init: create the 3 databases and per-service users
+- **Done when:** `docker compose up` brings both containers to healthy. A message
+  produced and consumed with the Kafka CLI round-trips. The H2 console shows 3 databases.
+
+### Part 2 — transaction-service (producer)
+- Spring Boot project, entity, Flyway migrations, validation, REST controller
+- Kafka producer config, event record, publish + metadata capture into `kafka_publish_log`
+- Global error handling (400 for validation errors, 503 if Kafka is unavailable)
+- Unit tests and an `@EmbeddedKafka` integration test
+- Dockerfile and compose entry
+- **Done when:** `curl POST /api/transactions` returns 201 with the partition and offset, and
+  the message is visible on the topic.
+
+### Part 3 — fraud-service (consumer #1)
+- Spring Boot project, its own event record, `@KafkaListener` (group `fraud-service`)
+- Rules engine (one class per rule behind a common interface, so rules are easy to add or test)
+- Idempotent processing, retry + DLT error handler, REST read API
+- Unit tests per rule and a consumer integration test (including a redelivery test)
+- Dockerfile and compose entry
+- **Done when:** a posted transaction shows up in `/api/risk/assessments` with the right score.
+
+### Part 4 — ledger-service (consumer #2)
+- Spring Boot project, its own event record, `@KafkaListener` (group `ledger-service`)
+- Double-entry posting, account and bank summaries, trial balance
+- Idempotent processing, retry + DLT, REST read API
+- Unit tests and an integration test (redelivered events must not double-post)
+- Dockerfile and compose entry
+- **Done when:** balances update after a post and the trial balance stays at 0.00.
+
+### Part 5 — React frontend
+- Vite + TypeScript app: form, result card, the three live panels, demo-scenario buttons
+- nginx config (SPA fallback + `/api/*` proxies), multi-stage Dockerfile, compose entry
+- **Done when:** at http://localhost:3000, submitting a transaction makes it appear in all
+  three panels.
+
+### Part 6 — End-to-end integration, hardening & docs
+- Full-stack startup check: health checks, startup order, restart policies, clean cold start
+- Resilience demo: stop a consumer, send transactions, restart it, and watch it catch up from
+  its committed offset (the core Kafka selling point)
+- `scripts/demo` that sends a scripted scenario set
+- README: architecture diagram, how to run, demo walkthrough, design decisions and
+  trade-offs, and talking points for interviews
+- **Done when:** a fresh clone runs with `docker compose up --build` and the walkthrough works.
+
+---
+
+## 8. Optional enhancements (beyond the 6 parts)
+- **Transactional Outbox** in transaction-service, to remove the dual-write risk
+- **`transactions.risk-assessed` event** from fraud-service, consumed by transaction-service to
+  show a status per transaction (choreography)
+- **Avro + Schema Registry**, for schema evolution
+- **Kafka UI** (e.g. Kafbat UI) under an opt-in compose profile `tools`, so it isn't one of the 6 core containers
+- Distributed tracing (Micrometer Tracing + OpenTelemetry) across the Kafka hop

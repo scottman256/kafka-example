@@ -1,0 +1,29 @@
+# Note: .env is committed on purpose. It only holds local demo values (see its header).
+
+# Gradle / Java
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+out/
+bin/
+
+# Local H2 files, if a service is ever run with an embedded database
+*.mv.db
+*.trace.db
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# IDEs and OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,83 @@
+name: kafka-example
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Kafka: a single broker in KRaft mode (no ZooKeeper). It acts as both broker
+  # and controller. Topics are created at startup by infra/kafka/create-topics.sh.
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:${KAFKA_VERSION}
+    hostname: kafka
+    init: true
+    command: ["bash", "/opt/demo/start.sh"]
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # INTERNAL is for other containers, EXTERNAL is for tools on the host machine.
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Topics are provisioned explicitly; a typo in a service should fail, not invent a topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Single broker, so every internal topic can only have one replica.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # "name:partitions". Each consumer group gets its own dead-letter topic. A DLT has the
+      # same partition count as its source, because Spring's dead-letter recoverer publishes
+      # to the same partition number.
+      DEMO_TOPICS: >-
+        ${TRANSACTIONS_TOPIC}:${TRANSACTIONS_TOPIC_PARTITIONS},${TRANSACTIONS_TOPIC}.fraud-service.DLT:${TRANSACTIONS_TOPIC_PARTITIONS},${TRANSACTIONS_TOPIC}.ledger-service.DLT:${TRANSACTIONS_TOPIC_PARTITIONS}
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT}:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./infra/kafka:/opt/demo:ro
+    healthcheck:
+      test: ["CMD", "bash", "/opt/demo/healthcheck.sh"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 90s
+      start_interval: 5s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # H2 in server mode: one container, with a separate database and login for
+  # each service (database-per-service).
+  # ---------------------------------------------------------------------------
+  h2-db:
+    build:
+      context: ./infra/h2
+    image: kafka-example/h2-db:2.4.240
+    hostname: h2-db
+    environment:
+      H2_DATABASES: >-
+        ${TRANSACTION_DB_NAME}:${TRANSACTION_DB_USER}:${TRANSACTION_DB_PASSWORD},${FRAUD_DB_NAME}:${FRAUD_DB_USER}:${FRAUD_DB_PASSWORD},${LEDGER_DB_NAME}:${LEDGER_DB_USER}:${LEDGER_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${H2_TCP_HOST_PORT}:9090"      # JDBC: jdbc:h2:tcp://localhost:9090/<db>
+      - "127.0.0.1:${H2_CONSOLE_HOST_PORT}:8090"  # Web console
+    volumes:
+      - h2-data:/opt/h2-data
+    healthcheck:
+      # The TCP port opens only after every database has been created.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9090"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
+    restart: unless-stopped
+
+volumes:
+  kafka-data:
+  h2-data:
