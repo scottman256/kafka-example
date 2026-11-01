@@ -186,7 +186,9 @@ All three services are currently at 100%. Each service's report is in
 `build/reports/jacoco/test/html/index.html`.
 
 To check the running stack end to end, run `python scripts/smoke_test.py`. It posts one
-transaction and waits for both consumers to process it.
+transaction and waits for both consumers to process it. For the same check through the browser,
+the [Playwright tests](playwright/README.md) drive the web app: they send payments and demo
+scenarios and wait for each one to reach all three panels.
 
 ## Continuous integration
 
@@ -199,6 +201,7 @@ only if its part of the repo changed:
 | Tests and coverage (*service*) | that service changed | `./gradlew check`: every test plus the 90% coverage gate |
 | Tests and coverage (frontend) | `frontend/` changed | `npm run check`: type-check, tests and the 90% coverage gate |
 | End-to-end (Docker Compose) | anything other than docs changed | builds and starts the whole stack, then runs the smoke test through the web app's proxy |
+| End-to-end (Playwright) | anything other than docs changed | builds and starts the whole stack, then runs the [Playwright browser tests](playwright/README.md) |
 
 Markdown files and the Bruno collection never trigger tests on their own. A change to the
 pipeline itself runs every job. Coverage figures appear in each job's summary.

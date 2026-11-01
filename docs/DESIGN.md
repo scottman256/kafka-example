@@ -325,8 +325,9 @@ the browser has no CORS issues.
   `@EmbeddedKafka` with in-memory H2 for each service's full-stack tests. JaCoCo fails the build
   below 90% line coverage.
 - **CI:** GitHub Actions on every pull request to `main`. Each service and the frontend run
-  their tests and coverage gate only when their own folder changed, and an end-to-end smoke test
-  runs against the Docker Compose stack for any change other than docs. Unaffected jobs are
+  their tests and coverage gate only when their own folder changed. For any change other than
+  docs, two end-to-end jobs run against the Docker Compose stack: a smoke test and the Playwright
+  browser tests. Unaffected jobs are
   skipped through job-level `if` conditions rather than trigger path filters. GitHub treats a
   skipped job as passed, so every job can be a required check on the protected `main`.
 - **React 19 + TypeScript 7 + Vite 8**, with plain CSS (no UI framework, to keep it light).
@@ -356,7 +357,8 @@ kafka-example/
 │   ├── ledger-service/
 │   └── bruno/                   # Bruno API collection for every service
 ├── frontend/
-├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end check on every PR
+├── playwright/                  # browser end-to-end tests against the running stack
+├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end checks on every PR
 └── scripts/
     ├── smoke_test.py            # end-to-end check against the running stack
     └── demo.sh / demo.ps1       # sends sample transactions
