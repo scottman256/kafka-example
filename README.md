@@ -190,13 +190,21 @@ transaction and waits for both consumers to process it.
 
 ## Continuous integration
 
-Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions:
+Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions.
+A first **Detect changes** job works out what the pull request touched, and each later job runs
+only if its part of the repo changed:
 
-- **Tests and coverage**: one job per service runs `./gradlew check`, so all of that service's
-  tests and its 90% coverage gate. The coverage figures appear in the job summary.
-- **End-to-end (Docker Compose)**: builds and starts the whole stack, then runs the smoke test.
+| Job | Runs when | What it does |
+|---|---|---|
+| Tests and coverage (*service*) | that service changed | `./gradlew check`: every test plus the 90% coverage gate |
+| Tests and coverage (frontend) | `frontend/` changed | `npm run check`: type-check, tests and the 90% coverage gate |
+| End-to-end (Docker Compose) | anything other than docs changed | builds and starts the whole stack, then runs the smoke test through the web app's proxy |
 
-`main` is protected: a pull request can only be merged when all four checks pass.
+Markdown files and the Bruno collection never trigger tests on their own. A change to the
+pipeline itself runs every job. Coverage figures appear in each job's summary.
+
+`main` is protected: a pull request can only be merged when every check has passed or been
+skipped as unaffected.
 
 ## Poke at the infrastructure
 

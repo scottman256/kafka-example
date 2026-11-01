@@ -324,9 +324,11 @@ the browser has no CORS issues.
 - **Tests:** JUnit 5 + Mockito for unit tests; `@WebMvcTest` and `@DataJpaTest` slices; and
   `@EmbeddedKafka` with in-memory H2 for each service's full-stack tests. JaCoCo fails the build
   below 90% line coverage.
-- **CI:** GitHub Actions on every pull request to `main`. Each service's tests and coverage gate
-  run, and an end-to-end smoke test runs against the Docker Compose stack. `main` is protected,
-  so a pull request merges only when every check passes.
+- **CI:** GitHub Actions on every pull request to `main`. Each service and the frontend run
+  their tests and coverage gate only when their own folder changed, and an end-to-end smoke test
+  runs against the Docker Compose stack for any change other than docs. Unaffected jobs are
+  skipped through job-level `if` conditions rather than trigger path filters. GitHub treats a
+  skipped job as passed, so every job can be a required check on the protected `main`.
 - **React 19 + TypeScript 7 + Vite 8**, with plain CSS (no UI framework, to keep it light).
   Dependencies are pinned to exact versions, with a committed `package-lock.json`.
 
