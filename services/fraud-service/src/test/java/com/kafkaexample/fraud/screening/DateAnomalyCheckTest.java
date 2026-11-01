@@ -2,6 +2,7 @@ package com.kafkaexample.fraud.screening;
 
 import java.time.LocalDate;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -23,6 +24,11 @@ class DateAnomalyCheckTest {
 	})
 	void triggersForFutureOrStaleTransactionDates(LocalDate transactionDate, boolean triggered) {
 		assertThat(check.isTriggeredBy(paymentDated(transactionDate))).isEqualTo(triggered);
+	}
+
+	@Test
+	void reportsTheDateAnomalyRule() {
+		assertThat(check.rule()).isEqualTo(RiskRule.DATE_ANOMALY);
 	}
 
 }

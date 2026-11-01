@@ -126,6 +126,19 @@ class TransactionEventPublisherTest {
 	}
 
 	@Test
+	void publishLogsAFailureAndKeepsTheThreadInterruptedWhenInterruptedWaitingForTheBroker() {
+		given(kafkaOperations.send(anyProducerRecord())).willReturn(new CompletableFuture<>());
+		Thread.currentThread().interrupt();
+
+		KafkaPublishLogEntry publishLogEntry = publisher.publish(event);
+		boolean stillInterrupted = Thread.interrupted();
+
+		assertThat(stillInterrupted).isTrue();
+		assertThat(publishLogEntry.getStatus()).isEqualTo(PublishStatus.FAILED);
+		assertThat(publishLogEntry.getErrorMessage()).contains("Interrupted");
+	}
+
+	@Test
 	void partitionKeyIgnoresCaseAndSurroundingWhitespace() {
 		assertThat(TransactionEventPublisher.partitionKey("  Alice SMITH ")).isEqualTo("alice smith");
 	}

@@ -1,0 +1,20 @@
+meta {
+  name: Get assessment for transaction
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{fraudServiceUrl}}/api/risk/assessments/{{transactionId}}
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.transactionId: eq "{{transactionId}}"
+}
+
+docs {
+  Uses `transactionId` from **Create transaction**. Returns 404 until fraud-service has screened the transaction, which normally takes a fraction of a second.
+}

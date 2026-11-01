@@ -1,0 +1,16 @@
+meta {
+  name: Get trial balance
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{ledgerServiceUrl}}/api/ledger/trial-balance
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.balanced: eq true
+}

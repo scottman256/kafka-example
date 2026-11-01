@@ -39,6 +39,11 @@ class NewPayeeHighValueCheckTest {
 		verifyNoInteractions(riskAssessmentRepository);
 	}
 
+	@Test
+	void reportsTheNewPayeeHighValueRule() {
+		assertThat(check().rule()).isEqualTo(RiskRule.NEW_PAYEE_HIGH_VALUE);
+	}
+
 	private NewPayeeHighValueCheck check() {
 		return new NewPayeeHighValueCheck(riskAssessmentRepository);
 	}

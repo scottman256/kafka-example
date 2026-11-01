@@ -1,5 +1,7 @@
 # Kafka Payments Demo
 
+[![CI](https://github.com/scottman256/kafka-example/actions/workflows/ci.yml/badge.svg)](https://github.com/scottman256/kafka-example/actions/workflows/ci.yml)
+
 An event-driven microservices demo built with **Apache Kafka**, **Spring Boot** and **React**.
 A user enters a financial transaction in a single-page app. A producer service records it
 and publishes a `TransactionCreated` event. Two independent consumer services react to it:
@@ -25,7 +27,7 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | 1 | Infrastructure: Kafka (KRaft) + H2 server + Compose | ✅ Done |
 | 2 | transaction-service (producer) | ✅ Done |
 | 3 | fraud-service (consumer) | ✅ Done |
-| 4 | ledger-service (consumer) | ⏳ |
+| 4 | ledger-service (consumer) | ✅ Done |
 | 5 | React frontend | ⏳ |
 | 6 | End-to-end integration, resilience demo, docs | ⏳ |
 
@@ -46,6 +48,7 @@ docker compose ps          # wait until every container shows "healthy"
 |---|---|
 | transaction-service API | http://localhost:8081/api/transactions |
 | fraud-service API | http://localhost:8082/api/risk/assessments |
+| ledger-service API | http://localhost:8083/api/ledger/accounts |
 | Kafka (from your machine) | `localhost:29092` |
 | Kafka (from containers) | `kafka:9092` |
 | H2 web console | http://localhost:8090 |
@@ -64,6 +67,9 @@ To sign in to the H2 console, use the JDBC URL `jdbc:h2:tcp://localhost:9090/tra
 rejected by the other databases.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the Kafka and H2 data.
+
+If you'd rather use an API client than curl, [services/bruno](services/bruno/README.md) has a
+[Bruno](https://www.usebruno.com) collection with every API.
 
 ## Try the transaction service
 
@@ -120,16 +126,57 @@ A record that isn't a valid event, such as malformed JSON, goes straight to
 `transactions.created.fraud-service.DLT` with `kafka_dlt-*` headers explaining why. Other
 failures are retried 3 times first. Either way the partition keeps moving.
 
+## Watch the ledger post double entries
+
+ledger-service reads the same events in its own consumer group and posts each one as a
+journal entry: a debit on the payer's account and an equal credit on the payee's. Post a
+transaction, then look at the ledger:
+
+```bash
+curl http://localhost:8083/api/ledger/accounts                           # every balance
+curl "http://localhost:8083/api/ledger/accounts/Bob's%20Hardware/entries"  # one account's lines
+curl http://localhost:8083/api/ledger/banks                              # outflow per source bank
+curl http://localhost:8083/api/ledger/trial-balance                      # must net to 0.00
+```
+
+A payer's balance goes down and the payee's goes up by the same amount, so the trial balance
+always nets to zero. Because both consumers read the same event independently, the
+transaction also appears in fraud-service. To see that each group tracks its own offsets:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group ledger-service
+```
+
 ## Run the tests
 
 ```bash
-cd services/transaction-service && ./gradlew test   # 54 tests
-cd services/fraud-service && ./gradlew test         # 70 tests
+cd services/transaction-service && ./gradlew check   # 60 tests
+cd services/fraud-service && ./gradlew check         # 77 tests
+cd services/ledger-service && ./gradlew check        # 60 tests
 ```
 
 Each service has unit tests, web and JPA slice tests, and a full-stack test against an
-embedded Kafka broker. The fraud-service suite also covers redelivery (idempotency) and the
-dead-letter topic.
+embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
+dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
+checks that no update is lost.
+
+`check` also runs a JaCoCo coverage gate: the build fails if line coverage drops below 90%.
+All three services are currently at 100%. Each service's report is in
+`build/reports/jacoco/test/html/index.html`.
+
+To check the running stack end to end, run `python scripts/smoke_test.py`. It posts one
+transaction and waits for both consumers to process it.
+
+## Continuous integration
+
+Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions:
+
+- **Tests and coverage**: one job per service runs `./gradlew check`, so all of that service's
+  tests and its 90% coverage gate. The coverage figures appear in the job summary.
+- **End-to-end (Docker Compose)**: builds and starts the whole stack, then runs the smoke test.
+
+`main` is protected: a pull request can only be merged when all four checks pass.
 
 ## Poke at the infrastructure
 

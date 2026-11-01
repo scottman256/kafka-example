@@ -12,6 +12,10 @@ bin/
 *.mv.db
 *.trace.db
 
+# Python (scripts/)
+__pycache__/
+*.pyc
+
 # Node / frontend
 node_modules/
 dist/

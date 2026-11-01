@@ -19,4 +19,9 @@ class SelfPaymentCheckTest {
 		assertThat(check.isTriggeredBy(payment("Alice Smith", "Alice Smithson", "50.00"))).isFalse();
 	}
 
+	@Test
+	void reportsTheSelfPaymentRule() {
+		assertThat(check.rule()).isEqualTo(RiskRule.SELF_PAYMENT);
+	}
+
 }

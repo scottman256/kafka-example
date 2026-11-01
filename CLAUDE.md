@@ -9,7 +9,7 @@
 - Avoid premature abstraction. Don't add configurability, indirection, or generic frameworks for hypothetical future needs.
 - Avoid unnecessary comments. Code should be self-explanatory through naming and structure; use comments only for non-obvious "why" (e.g. a workaround, a subtle constraint).
 - Prefer composition and small, focused classes over large, multi-purpose ones.
-- Minimize boiler plate and redundant / duplicate code, while still adhering to clean code standards
+- Minimize boiler plate and redundant / duplicate code, while still adhering to clean code standards.
 - Strict microservices architecture will be used for all Java microservices.
 
 ## Testing
@@ -17,4 +17,5 @@
 - Every method with meaningful logic should have unit test coverage.
 - Integration tests should cover each layer boundary (API → Service → Repository → Database).
 - Tests should be clean and readable, following the same style principles as production code.
+- Aim for 100% unit test coverage, with a minimum requirement of over 90% coverage.
 

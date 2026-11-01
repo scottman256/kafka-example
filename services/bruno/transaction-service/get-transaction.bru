@@ -1,0 +1,20 @@
+meta {
+  name: Get transaction
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{transactionServiceUrl}}/api/transactions/{{transactionId}}
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq "{{transactionId}}"
+}
+
+docs {
+  Uses `transactionId` from **Create transaction**.
+}
