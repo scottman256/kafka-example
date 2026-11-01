@@ -18,6 +18,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import lombok.Getter;
 
 /**
  * The screening result for one transaction, together with the transaction details the
@@ -25,6 +26,7 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "risk_assessments")
+@Getter
 public class RiskAssessment {
 
 	@Id
@@ -85,52 +87,8 @@ public class RiskAssessment {
 		this.assessedAt = assessedAt;
 	}
 
-	public UUID getEventId() {
-		return eventId;
-	}
-
-	public UUID getTransactionId() {
-		return transactionId;
-	}
-
-	public String getPayer() {
-		return payer;
-	}
-
-	public String getPayee() {
-		return payee;
-	}
-
-	public BigDecimal getAmount() {
-		return amount;
-	}
-
-	public Instant getOccurredAt() {
-		return occurredAt;
-	}
-
-	public int getRiskScore() {
-		return riskScore;
-	}
-
-	public RiskLevel getRiskLevel() {
-		return riskLevel;
-	}
-
 	public Set<RiskRule> getTriggeredRules() {
 		return Set.copyOf(triggeredRules);
-	}
-
-	public int getKafkaPartition() {
-		return kafkaPartition;
-	}
-
-	public long getKafkaOffset() {
-		return kafkaOffset;
-	}
-
-	public Instant getAssessedAt() {
-		return assessedAt;
 	}
 
 }

@@ -11,9 +11,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
 
 @Entity
 @Table(name = "transactions")
+@Getter
 public class Transaction {
 
 	public static final String CURRENCY = "USD";
@@ -58,42 +60,6 @@ public class Transaction {
 		return new TransactionCreatedEvent(UUID.randomUUID(), TransactionCreatedEvent.EVENT_TYPE,
 				TransactionCreatedEvent.EVENT_VERSION, occurredAt, id, transactionDate, payer, payee, amount,
 				currency, memo, sourceBank);
-	}
-
-	public UUID getId() {
-		return id;
-	}
-
-	public LocalDate getTransactionDate() {
-		return transactionDate;
-	}
-
-	public String getPayer() {
-		return payer;
-	}
-
-	public String getPayee() {
-		return payee;
-	}
-
-	public BigDecimal getAmount() {
-		return amount;
-	}
-
-	public String getCurrency() {
-		return currency;
-	}
-
-	public String getMemo() {
-		return memo;
-	}
-
-	public String getSourceBank() {
-		return sourceBank;
-	}
-
-	public Instant getCreatedAt() {
-		return createdAt;
 	}
 
 }

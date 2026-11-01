@@ -10,11 +10,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 
 @Entity
 @Table(name = "kafka_publish_log")
+@Getter
 public class KafkaPublishLogEntry {
 
 	static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
@@ -79,54 +81,6 @@ public class KafkaPublishLogEntry {
 
 	public boolean isPublished() {
 		return status == PublishStatus.PUBLISHED;
-	}
-
-	public UUID getId() {
-		return id;
-	}
-
-	public UUID getEventId() {
-		return eventId;
-	}
-
-	public UUID getTransactionId() {
-		return transactionId;
-	}
-
-	public String getTopic() {
-		return topic;
-	}
-
-	public String getMessageKey() {
-		return messageKey;
-	}
-
-	public String getPayload() {
-		return payload;
-	}
-
-	public PublishStatus getStatus() {
-		return status;
-	}
-
-	public Integer getKafkaPartition() {
-		return kafkaPartition;
-	}
-
-	public Long getKafkaOffset() {
-		return kafkaOffset;
-	}
-
-	public Instant getKafkaTimestamp() {
-		return kafkaTimestamp;
-	}
-
-	public String getErrorMessage() {
-		return errorMessage;
-	}
-
-	public Instant getLoggedAt() {
-		return loggedAt;
 	}
 
 }
