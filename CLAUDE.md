@@ -9,7 +9,7 @@
 - Avoid premature abstraction. Don't add configurability, indirection, or generic frameworks for hypothetical future needs.
 - Avoid unnecessary comments. Code should be self-explanatory through naming and structure; use comments only for non-obvious "why" (e.g. a workaround, a subtle constraint).
 - Prefer composition and small, focused classes over large, multi-purpose ones.
-- Strict microservices architecture will be used for the 3 Java Services.
+- Strict microservices architecture will be used for all Java microservices.
 
 ## Testing
 

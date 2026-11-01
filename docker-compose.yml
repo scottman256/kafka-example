@@ -78,6 +78,36 @@ services:
       start_interval: 2s
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # transaction-service: REST intake and Kafka producer. It owns transactiondb.
+  # ---------------------------------------------------------------------------
+  transaction-service:
+    build:
+      context: ./services/transaction-service
+    image: kafka-example/transaction-service:latest
+    environment:
+      SERVER_PORT: 8081
+      DB_URL: jdbc:h2:tcp://h2-db:9090/${TRANSACTION_DB_NAME}
+      DB_USER: ${TRANSACTION_DB_USER}
+      DB_PASSWORD: ${TRANSACTION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRANSACTIONS_TOPIC: ${TRANSACTIONS_TOPIC}
+    ports:
+      - "127.0.0.1:${TRANSACTION_SERVICE_HOST_PORT}:8081"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      h2-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 3s
+    restart: unless-stopped
+
 volumes:
   kafka-data:
   h2-data:

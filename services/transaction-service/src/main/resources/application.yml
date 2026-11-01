@@ -1,0 +1,39 @@
+# Defaults target the Docker Compose infrastructure from the host, so the service can also
+# run straight from an IDE. Inside Compose the environment variables point at container names.
+spring:
+  application:
+    name: transaction-service
+  datasource:
+    url: ${DB_URL:jdbc:h2:tcp://localhost:9090/transactiondb}
+    username: ${DB_USER:transaction_svc}
+    password: ${DB_PASSWORD:transaction_demo_pw}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Fail within ~10s when Kafka is unreachable, rather than holding the HTTP request
+        # for the client defaults (60s to block on metadata, 120s to deliver).
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
+
+server:
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  kafka:
+    transactions-topic: ${TRANSACTIONS_TOPIC:transactions.created}
