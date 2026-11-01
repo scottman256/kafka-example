@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TransactionTest {
 
 	@Test
-	void createCopiesTheDetailsAndStampsCurrencyAndCreationTime() {
-		Transaction transaction = Transaction.create(newTransaction(), CREATED_AT);
+	void copiesTheDetailsAndStampsCurrencyAndCreationTime() {
+		Transaction transaction = new Transaction(newTransaction(), CREATED_AT);
 
 		assertThat(transaction.getTransactionDate()).isEqualTo(LocalDate.of(2026, 10, 30));
 		assertThat(transaction.getPayer()).isEqualTo("Alice Smith");
@@ -28,11 +28,11 @@ class TransactionTest {
 	}
 
 	@Test
-	void createStoresTheAmountWithTwoDecimalPlaces() {
+	void storesTheAmountWithTwoDecimalPlaces() {
 		NewTransaction wholeDollars = new NewTransaction(LocalDate.of(2026, 10, 30), "Alice Smith", "Bob's Hardware",
 				new BigDecimal("125.5"), null, "First National Bank");
 
-		assertThat(Transaction.create(wholeDollars, CREATED_AT).getAmount()).hasToString("125.50");
+		assertThat(new Transaction(wholeDollars, CREATED_AT).getAmount()).hasToString("125.50");
 	}
 
 	@Test

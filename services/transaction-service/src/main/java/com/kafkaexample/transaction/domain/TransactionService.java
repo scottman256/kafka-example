@@ -6,11 +6,13 @@ import java.util.UUID;
 
 import com.kafkaexample.transaction.publishing.KafkaPublishLogEntry;
 import com.kafkaexample.transaction.publishing.TransactionEventPublisher;
+import lombok.RequiredArgsConstructor;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class TransactionService {
 
 	static final int RECENT_TRANSACTION_LIMIT = 50;
@@ -21,19 +23,12 @@ public class TransactionService {
 
 	private final Clock clock;
 
-	public TransactionService(TransactionRepository transactionRepository,
-			TransactionEventPublisher transactionEventPublisher, Clock clock) {
-		this.transactionRepository = transactionRepository;
-		this.transactionEventPublisher = transactionEventPublisher;
-		this.clock = clock;
-	}
-
 	/**
 	 * Saves the transaction, then publishes it. These are two separate writes (a "dual write"),
 	 * so a failed publish leaves a saved transaction with a FAILED publish log entry.
 	 */
 	public TransactionWithPublishLog create(NewTransaction newTransaction) {
-		Transaction transaction = transactionRepository.save(Transaction.create(newTransaction, clock.instant()));
+		Transaction transaction = transactionRepository.save(new Transaction(newTransaction, clock.instant()));
 		KafkaPublishLogEntry publishLogEntry = transactionEventPublisher.publish(transaction.toCreatedEvent(clock.instant()));
 		if (!publishLogEntry.isPublished()) {
 			throw new TransactionNotPublishedException(transaction.getId(), publishLogEntry.getErrorMessage());

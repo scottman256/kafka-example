@@ -28,6 +28,18 @@ public final class TransactionFixtures {
 
 	public static final long OFFSET = 42;
 
+	/** The payer is padded so tests can check that whitespace is stripped. */
+	public static final String CREATE_REQUEST_JSON = """
+			{
+			  "transactionDate": "2026-10-30",
+			  "payer": "  Alice Smith ",
+			  "payee": "Bob's Hardware",
+			  "amount": 125.50,
+			  "memo": "Lumber for deck",
+			  "sourceBank": "First National Bank"
+			}
+			""";
+
 	private TransactionFixtures() {
 	}
 
@@ -37,7 +49,7 @@ public final class TransactionFixtures {
 	}
 
 	public static Transaction transaction(Instant createdAt) {
-		return Transaction.create(newTransaction(), createdAt);
+		return new Transaction(newTransaction(), createdAt);
 	}
 
 	public static Transaction savedTransaction() {
@@ -48,7 +60,7 @@ public final class TransactionFixtures {
 
 	public static KafkaPublishLogEntry pendingLogEntry(Transaction transaction) {
 		ProducerRecord<String, String> producerRecord = new ProducerRecord<>(TOPIC, "alice smith", "{\"eventType\":\"TransactionCreated\"}");
-		return KafkaPublishLogEntry.forRecord(transaction.toCreatedEvent(CREATED_AT), producerRecord);
+		return new KafkaPublishLogEntry(transaction.toCreatedEvent(CREATED_AT), producerRecord);
 	}
 
 	public static KafkaPublishLogEntry publishedLogEntry(Transaction transaction) {

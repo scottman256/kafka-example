@@ -24,7 +24,7 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 |---|---|---|
 | 1 | Infrastructure: Kafka (KRaft) + H2 server + Compose | ✅ Done |
 | 2 | transaction-service (producer) | ✅ Done |
-| 3 | fraud-service (consumer) | ⏳ |
+| 3 | fraud-service (consumer) | ✅ Done |
 | 4 | ledger-service (consumer) | ⏳ |
 | 5 | React frontend | ⏳ |
 | 6 | End-to-end integration, resilience demo, docs | ⏳ |
@@ -39,12 +39,13 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 
 ```bash
 docker compose up -d --build
-docker compose ps          # wait until kafka and h2-db show "healthy"
+docker compose ps          # wait until every container shows "healthy"
 ```
 
 | What | Where |
 |---|---|
 | transaction-service API | http://localhost:8081/api/transactions |
+| fraud-service API | http://localhost:8082/api/risk/assessments |
 | Kafka (from your machine) | `localhost:29092` |
 | Kafka (from containers) | `kafka:9092` |
 | H2 web console | http://localhost:8090 |
@@ -89,12 +90,46 @@ Responses:
 To see the dual-write trade-off for yourself, run `docker compose stop kafka`, post a
 transaction, then run `docker compose start kafka` and list the transactions.
 
+## Watch the fraud service screen transactions
+
+fraud-service reads every `TransactionCreated` event and scores it against six fraud and AML
+rules. Post a few of these through the transaction service, then look at the assessments:
+
+| Try | Rules triggered | Score |
+|---|---|---|
+| Payer and payee the same, $9,500 | `POSSIBLE_STRUCTURING`, `SELF_PAYMENT`, `NEW_PAYEE_HIGH_VALUE` | 95 HIGH |
+| $15,000 to a new payee | `LARGE_AMOUNT`, `NEW_PAYEE_HIGH_VALUE` | 55 MEDIUM |
+| Four small payments by one payer in a row | the 4th triggers `HIGH_VELOCITY` | 30 MEDIUM |
+| Transaction date three weeks in the future | `DATE_ANOMALY` (plus `NEW_PAYEE_HIGH_VALUE` if over $1,000) | 20+ |
+
+```bash
+curl http://localhost:8082/api/risk/assessments          # newest first, with triggered rules
+curl http://localhost:8082/api/risk/assessments/<txn-id> # one transaction's assessment
+curl http://localhost:8082/api/risk/alerts               # MEDIUM and HIGH only
+```
+
+Each assessment records the partition and offset it was read from. To see Kafka's
+consumer-group bookkeeping:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group fraud-service
+```
+
+A record that isn't a valid event, such as malformed JSON, goes straight to
+`transactions.created.fraud-service.DLT` with `kafka_dlt-*` headers explaining why. Other
+failures are retried 3 times first. Either way the partition keeps moving.
+
 ## Run the tests
 
 ```bash
-cd services/transaction-service
-./gradlew test        # unit tests, web and JPA slice tests, full-stack test with embedded Kafka
+cd services/transaction-service && ./gradlew test   # 54 tests
+cd services/fraud-service && ./gradlew test         # 70 tests
 ```
+
+Each service has unit tests, web and JPA slice tests, and a full-stack test against an
+embedded Kafka broker. The fraud-service suite also covers redelivery (idempotency) and the
+dead-letter topic.
 
 ## Poke at the infrastructure
 

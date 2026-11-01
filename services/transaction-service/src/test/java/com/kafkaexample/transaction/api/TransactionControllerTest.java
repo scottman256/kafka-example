@@ -21,6 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
+import static com.kafkaexample.transaction.TransactionFixtures.CREATE_REQUEST_JSON;
 import static com.kafkaexample.transaction.TransactionFixtures.OFFSET;
 import static com.kafkaexample.transaction.TransactionFixtures.PARTITION;
 import static com.kafkaexample.transaction.TransactionFixtures.TOPIC;
@@ -36,17 +37,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @WebMvcTest(TransactionController.class)
 class TransactionControllerTest {
 
-	private static final String VALID_REQUEST = """
-			{
-			  "transactionDate": "2026-10-30",
-			  "payer": "  Alice Smith ",
-			  "payee": "Bob's Hardware",
-			  "amount": 125.50,
-			  "memo": "Lumber for deck",
-			  "sourceBank": "First National Bank"
-			}
-			""";
-
 	@Autowired
 	private MockMvcTester mockMvc;
 
@@ -57,10 +47,9 @@ class TransactionControllerTest {
 
 	@Test
 	void createReturnsTheTransactionWithItsKafkaPublication() {
-		given(transactionService.create(any(NewTransaction.class)))
-			.willReturn(new TransactionWithPublishLog(transaction, publishedLogEntry(transaction)));
+		givenTheServicePublishesTheTransaction();
 
-		assertThat(post(VALID_REQUEST)).hasStatus(HttpStatus.CREATED)
+		assertThat(post(CREATE_REQUEST_JSON)).hasStatus(HttpStatus.CREATED)
 			.hasHeader("Location", "/api/transactions/" + TRANSACTION_ID)
 			.bodyJson()
 			.hasPathSatisfying("$.id", id -> assertThat(id).asString().isEqualTo(TRANSACTION_ID.toString()))
@@ -72,10 +61,9 @@ class TransactionControllerTest {
 
 	@Test
 	void createPassesTheStrippedRequestToTheService() {
-		given(transactionService.create(any(NewTransaction.class)))
-			.willReturn(new TransactionWithPublishLog(transaction, publishedLogEntry(transaction)));
+		givenTheServicePublishesTheTransaction();
 
-		post(VALID_REQUEST);
+		post(CREATE_REQUEST_JSON);
 
 		ArgumentCaptor<NewTransaction> newTransactionCaptor = ArgumentCaptor.forClass(NewTransaction.class);
 		verify(transactionService).create(newTransactionCaptor.capture());
@@ -94,7 +82,7 @@ class TransactionControllerTest {
 
 	@Test
 	void createRejectsAnUnknownSourceBank() {
-		assertThat(post(VALID_REQUEST.replace("First National Bank", "Bank of Nowhere")))
+		assertThat(post(CREATE_REQUEST_JSON.replace("First National Bank", "Bank of Nowhere")))
 			.hasStatus(HttpStatus.BAD_REQUEST)
 			.bodyJson()
 			.extractingPath("$.fieldErrors.sourceBank")
@@ -104,14 +92,14 @@ class TransactionControllerTest {
 	@ParameterizedTest
 	@ValueSource(strings = { "0", "-5.00", "10.001" })
 	void createRejectsAmountsThatAreNotPositiveWholeCents(String amount) {
-		assertThat(post(VALID_REQUEST.replace("125.50", amount))).hasStatus(HttpStatus.BAD_REQUEST)
+		assertThat(post(CREATE_REQUEST_JSON.replace("125.50", amount))).hasStatus(HttpStatus.BAD_REQUEST)
 			.bodyJson()
 			.hasPath("$.fieldErrors.amount");
 	}
 
 	@Test
 	void createRejectsAPayerShorterThanTwoCharactersOnceStripped() {
-		assertThat(post(VALID_REQUEST.replace("  Alice Smith ", " A "))).hasStatus(HttpStatus.BAD_REQUEST)
+		assertThat(post(CREATE_REQUEST_JSON.replace("  Alice Smith ", " A "))).hasStatus(HttpStatus.BAD_REQUEST)
 			.bodyJson()
 			.hasPath("$.fieldErrors.payer");
 	}
@@ -127,7 +115,7 @@ class TransactionControllerTest {
 		given(transactionService.create(any(NewTransaction.class)))
 			.willThrow(new TransactionNotPublishedException(TRANSACTION_ID, "broker unavailable"));
 
-		assertThat(post(VALID_REQUEST)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
+		assertThat(post(CREATE_REQUEST_JSON)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
 			.bodyJson()
 			.extractingPath("$.transactionId")
 			.isEqualTo(TRANSACTION_ID.toString());
@@ -158,6 +146,11 @@ class TransactionControllerTest {
 			.extractingPath("$")
 			.asArray()
 			.contains("First National Bank", "Summit Credit Union");
+	}
+
+	private void givenTheServicePublishesTheTransaction() {
+		given(transactionService.create(any(NewTransaction.class)))
+			.willReturn(new TransactionWithPublishLog(transaction, publishedLogEntry(transaction)));
 	}
 
 	private MvcTestResult post(String json) {

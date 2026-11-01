@@ -17,7 +17,7 @@ class KafkaPublishLogEntryTest {
 	private final KafkaPublishLogEntry publishLogEntry = pendingLogEntry(savedTransaction());
 
 	@Test
-	void forRecordCapturesTheMessageAsPending() {
+	void newEntryCapturesTheMessageAsPending() {
 		assertThat(publishLogEntry.getTransactionId()).isEqualTo(TRANSACTION_ID);
 		assertThat(publishLogEntry.getEventId()).isNotNull();
 		assertThat(publishLogEntry.getTopic()).isEqualTo(TOPIC);

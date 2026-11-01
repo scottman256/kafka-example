@@ -1,5 +1,22 @@
 name: kafka-example
 
+# Startup order, health check and restart policy shared by every Java service. Each service
+# merges it in with "<<: *java-service" and sets SERVER_PORT, which the health check reads.
+x-java-service: &java-service
+  depends_on:
+    kafka:
+      condition: service_healthy
+    h2-db:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fs http://localhost:$${SERVER_PORT}/actuator/health"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 60s
+    start_interval: 3s
+  restart: unless-stopped
+
 services:
 
   # ---------------------------------------------------------------------------
@@ -82,6 +99,7 @@ services:
   # transaction-service: REST intake and Kafka producer. It owns transactiondb.
   # ---------------------------------------------------------------------------
   transaction-service:
+    <<: *java-service
     build:
       context: ./services/transaction-service
     image: kafka-example/transaction-service:latest
@@ -94,19 +112,26 @@ services:
       TRANSACTIONS_TOPIC: ${TRANSACTIONS_TOPIC}
     ports:
       - "127.0.0.1:${TRANSACTION_SERVICE_HOST_PORT}:8081"
-    depends_on:
-      kafka:
-        condition: service_healthy
-      h2-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-      start_interval: 3s
-    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # fraud-service: Kafka consumer (group fraud-service) that risk-scores every
+  # transaction. It owns frauddb and does not depend on the other services.
+  # ---------------------------------------------------------------------------
+  fraud-service:
+    <<: *java-service
+    build:
+      context: ./services/fraud-service
+    image: kafka-example/fraud-service:latest
+    environment:
+      SERVER_PORT: 8082
+      DB_URL: jdbc:h2:tcp://h2-db:9090/${FRAUD_DB_NAME}
+      DB_USER: ${FRAUD_DB_USER}
+      DB_PASSWORD: ${FRAUD_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRANSACTIONS_TOPIC: ${TRANSACTIONS_TOPIC}
+      DEAD_LETTER_TOPIC: ${TRANSACTIONS_TOPIC}.fraud-service.DLT
+    ports:
+      - "127.0.0.1:${FRAUD_SERVICE_HOST_PORT}:8082"
 
 volumes:
   kafka-data:

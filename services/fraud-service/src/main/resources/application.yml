@@ -1,0 +1,34 @@
+# Defaults target the Docker Compose infrastructure from the host, so the service can also
+# run straight from an IDE. Inside Compose the environment variables point at container names.
+spring:
+  application:
+    name: fraud-service
+  datasource:
+    url: ${DB_URL:jdbc:h2:tcp://localhost:9090/frauddb}
+    username: ${DB_USER:fraud_svc}
+    password: ${DB_PASSWORD:fraud_demo_pw}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Loads the triggered rules for a whole page of assessments in one query, not one each.
+        default_batch_fetch_size: 50
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: fraud-service
+      # A brand-new consumer group starts at the beginning of the topic, so no transaction is missed.
+      auto-offset-reset: earliest
+    listener:
+      # One consumer thread per partition of transactions.created.
+      concurrency: 3
+
+server:
+  port: ${SERVER_PORT:8082}
+
+app:
+  kafka:
+    transactions-topic: ${TRANSACTIONS_TOPIC:transactions.created}
+    dead-letter-topic: ${DEAD_LETTER_TOPIC:transactions.created.fraud-service.DLT}
