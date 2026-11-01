@@ -294,6 +294,22 @@ the browser has no CORS issues.
 - **"Demo scenarios" buttons:** pre-fill the form with cases that trigger specific fraud
   rules, such as a $9,500 payment, a self-payment or a velocity burst.
 
+**How it's built**
+- **Data:** each panel polls its own service through one small hook. A failed poll keeps the
+  last data on screen and shows a warning naming the service, so stopping a consumer is
+  visible but doesn't blank the page. The ledger panel reads its three endpoints together.
+- **API types:** like the consumers' event records, the TypeScript types hold only the fields
+  the UI uses.
+- **Validation:** client-side validation mirrors transaction-service's rules. Field errors the
+  server returns (a 400 problem detail) are shown on the same fields. A 503 or an unreachable
+  service is shown in the result card.
+- **nginx:** serves the built app and proxies `/api/transactions`, `/api/risk` and `/api/ledger`.
+  It resolves service names through Docker's DNS on every request (`resolver 127.0.0.11`), so
+  the page loads while a service is down and keeps working after a restarted service comes
+  back on a new IP. The image runs nginx as a non-root user.
+- **Tests:** Vitest with React Testing Library and a fake `fetch`, with the same 90% line
+  coverage gate as the Java services.
+
 ---
 
 ## 6. Tech stack & conventions
@@ -311,8 +327,8 @@ the browser has no CORS issues.
 - **CI:** GitHub Actions on every pull request to `main`. Each service's tests and coverage gate
   run, and an end-to-end smoke test runs against the Docker Compose stack. `main` is protected,
   so a pull request merges only when every check passes.
-- **React + TypeScript + Vite** (latest stable at build time), plain CSS (no UI framework,
-  to keep it light)
+- **React 19 + TypeScript 7 + Vite 8**, with plain CSS (no UI framework, to keep it light).
+  Dependencies are pinned to exact versions, with a committed `package-lock.json`.
 
 **Pinned versions that must agree**
 | Component | Version | Why it's pinned |

@@ -154,6 +154,26 @@ services:
     ports:
       - "127.0.0.1:${LEDGER_SERVICE_HOST_PORT}:8083"
 
+  # ---------------------------------------------------------------------------
+  # frontend: the React app, served by nginx, which also proxies /api/* to the
+  # three services. It doesn't wait for them, so the page still loads (and shows
+  # which service is unreachable) while one is down.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+    image: kafka-example/frontend:latest
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      start_interval: 2s
+    restart: unless-stopped
+
 volumes:
   kafka-data:
   h2-data:

@@ -28,14 +28,14 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | 2 | transaction-service (producer) | ✅ Done |
 | 3 | fraud-service (consumer) | ✅ Done |
 | 4 | ledger-service (consumer) | ✅ Done |
-| 5 | React frontend | ⏳ |
+| 5 | React frontend | ✅ Done |
 | 6 | End-to-end integration, resilience demo, docs | ⏳ |
 
 ## Prerequisites
 
 - Docker Desktop (Compose v2)
-- JDK 17 and Node.js are needed only for running the services outside Docker. Gradle is
-  not needed, because each service has its own wrapper.
+- JDK 17 and Node.js 22.12 or later are needed only for building and testing outside Docker.
+  Gradle is not needed, because each service has its own wrapper.
 
 ## Run it
 
@@ -46,6 +46,7 @@ docker compose ps          # wait until every container shows "healthy"
 
 | What | Where |
 |---|---|
+| **The web app** | **http://localhost:3000** |
 | transaction-service API | http://localhost:8081/api/transactions |
 | fraud-service API | http://localhost:8082/api/risk/assessments |
 | ledger-service API | http://localhost:8083/api/ledger/accounts |
@@ -70,6 +71,22 @@ Stop everything with `docker compose down`. Add `-v` to also delete the Kafka an
 
 If you'd rather use an API client than curl, [services/bruno](services/bruno/README.md) has a
 [Bruno](https://www.usebruno.com) collection with every API.
+
+## Use the web app
+
+Open http://localhost:3000. Fill in the form, or pick a **demo scenario** to fill it with a case
+that trips a fraud rule, and send it. The result card shows the Kafka topic, partition, offset
+and key the transaction was published with. Within two seconds it appears in all three live
+panels: the transaction itself, fraud-service's risk score and rules, and ledger-service's
+updated balances and trial balance.
+
+nginx serves the page and forwards `/api/transactions`, `/api/risk` and `/api/ledger` to the
+services, so the browser only ever talks to one origin. Stop a consumer
+(`docker compose stop fraud-service`) and its panel warns that it can't be reached while the
+others carry on.
+
+To work on the UI with hot reload, run `npm install` and then `npm run dev` in `frontend/`, with
+the Compose stack running. The dev server proxies the APIs the same way.
 
 ## Try the transaction service
 
@@ -154,12 +171,15 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 cd services/transaction-service && ./gradlew check   # 60 tests
 cd services/fraud-service && ./gradlew check         # 77 tests
 cd services/ledger-service && ./gradlew check        # 60 tests
+cd frontend && npm ci && npm run check               # 75 tests
 ```
 
 Each service has unit tests, web and JPA slice tests, and a full-stack test against an
 embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
 dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
-checks that no update is lost.
+checks that no update is lost. The frontend's `check` type-checks the app, then runs Vitest
+and React Testing Library tests against a fake API, with the same 90% line-coverage gate. It
+is also at 100%, with its report in `frontend/coverage/index.html`.
 
 `check` also runs a JaCoCo coverage gate: the build fails if line coverage drops below 90%.
 All three services are currently at 100%. Each service's report is in
