@@ -45,6 +45,11 @@ class HighVelocityCheckTest {
 				Instant.parse("2026-10-31T14:12:05Z"), OCCURRED_AT);
 	}
 
+	@Test
+	void reportsTheHighVelocityRule() {
+		assertThat(check().rule()).isEqualTo(RiskRule.HIGH_VELOCITY);
+	}
+
 	private HighVelocityCheck check() {
 		return new HighVelocityCheck(riskAssessmentRepository);
 	}

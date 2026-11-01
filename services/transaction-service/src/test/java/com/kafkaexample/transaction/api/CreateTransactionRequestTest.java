@@ -5,6 +5,9 @@ import java.time.LocalDate;
 
 import com.kafkaexample.transaction.domain.NewTransaction;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,10 +37,12 @@ class CreateTransactionRequestTest {
 				"Bob's Hardware", AMOUNT, "Lumber", "First National Bank"));
 	}
 
-	@Test
-	void toNewTransactionTreatsABlankMemoAsNoMemo() {
+	@ParameterizedTest
+	@NullSource
+	@ValueSource(strings = { "", "   " })
+	void toNewTransactionTreatsAMissingOrBlankMemoAsNoMemo(String memo) {
 		CreateTransactionRequest request = new CreateTransactionRequest(TRANSACTION_DATE, "Alice Smith",
-				"Bob's Hardware", AMOUNT, "   ", "First National Bank");
+				"Bob's Hardware", AMOUNT, memo, "First National Bank");
 
 		assertThat(request.toNewTransaction().memo()).isNull();
 	}

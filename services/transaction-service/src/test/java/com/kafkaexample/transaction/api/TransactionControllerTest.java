@@ -98,6 +98,15 @@ class TransactionControllerTest {
 	}
 
 	@Test
+	void createReportsOneMessagePerFieldWhenAFieldBreaksSeveralRules() {
+		assertThat(post(CREATE_REQUEST_JSON.replace("  Alice Smith ", ""))).hasStatus(HttpStatus.BAD_REQUEST)
+			.bodyJson()
+			.extractingPath("$.fieldErrors.payer")
+			.asString()
+			.isNotBlank();
+	}
+
+	@Test
 	void createRejectsAPayerShorterThanTwoCharactersOnceStripped() {
 		assertThat(post(CREATE_REQUEST_JSON.replace("  Alice Smith ", " A "))).hasStatus(HttpStatus.BAD_REQUEST)
 			.bodyJson()
@@ -130,6 +139,17 @@ class TransactionControllerTest {
 			.extractingPath("$[*].id")
 			.asArray()
 			.containsExactly(TRANSACTION_ID.toString());
+	}
+
+	@Test
+	void findByIdReturnsTheTransactionWithItsKafkaPublication() {
+		given(transactionService.findById(TRANSACTION_ID))
+			.willReturn(new TransactionWithPublishLog(transaction, publishedLogEntry(transaction)));
+
+		assertThat(mockMvc.get().uri("/api/transactions/{id}", TRANSACTION_ID)).hasStatusOk()
+			.bodyJson()
+			.hasPathSatisfying("$.id", id -> assertThat(id).asString().isEqualTo(TRANSACTION_ID.toString()))
+			.hasPathSatisfying("$.kafka.status", status -> assertThat(status).asString().isEqualTo("PUBLISHED"));
 	}
 
 	@Test

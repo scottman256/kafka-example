@@ -305,8 +305,12 @@ the browser has no CORS issues.
   `@RequiredArgsConstructor` for constructor injection
 - **Gradle (Kotlin DSL)** with the Gradle wrapper, one project per service under `services/`.
   Gradle doesn't need to be installed locally.
-- **Tests:** JUnit 5 + Mockito for unit tests; `@EmbeddedKafka` / Testcontainers for Kafka
-  integration tests
+- **Tests:** JUnit 5 + Mockito for unit tests; `@WebMvcTest` and `@DataJpaTest` slices; and
+  `@EmbeddedKafka` with in-memory H2 for each service's full-stack tests. JaCoCo fails the build
+  below 90% line coverage.
+- **CI:** GitHub Actions on every pull request to `main`. Each service's tests and coverage gate
+  run, and an end-to-end smoke test runs against the Docker Compose stack. `main` is protected,
+  so a pull request merges only when every check passes.
 - **React + TypeScript + Vite** (latest stable at build time), plain CSS (no UI framework,
   to keep it light)
 
@@ -334,7 +338,9 @@ kafka-example/
 │   ├── ledger-service/
 │   └── bruno/                   # Bruno API collection for every service
 ├── frontend/
+├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end check on every PR
 └── scripts/
+    ├── smoke_test.py            # end-to-end check against the running stack
     └── demo.sh / demo.ps1       # sends sample transactions
 ```
 

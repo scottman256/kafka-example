@@ -1,5 +1,7 @@
 # Kafka Payments Demo
 
+[![CI](https://github.com/scottman256/kafka-example/actions/workflows/ci.yml/badge.svg)](https://github.com/scottman256/kafka-example/actions/workflows/ci.yml)
+
 An event-driven microservices demo built with **Apache Kafka**, **Spring Boot** and **React**.
 A user enters a financial transaction in a single-page app. A producer service records it
 and publishes a `TransactionCreated` event. Two independent consumer services react to it:
@@ -149,15 +151,32 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 ## Run the tests
 
 ```bash
-cd services/transaction-service && ./gradlew test   # 54 tests
-cd services/fraud-service && ./gradlew test         # 70 tests
-cd services/ledger-service && ./gradlew test        # 59 tests
+cd services/transaction-service && ./gradlew check   # 60 tests
+cd services/fraud-service && ./gradlew check         # 77 tests
+cd services/ledger-service && ./gradlew check        # 60 tests
 ```
 
 Each service has unit tests, web and JPA slice tests, and a full-stack test against an
 embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
 dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
 checks that no update is lost.
+
+`check` also runs a JaCoCo coverage gate: the build fails if line coverage drops below 90%.
+All three services are currently at 100%. Each service's report is in
+`build/reports/jacoco/test/html/index.html`.
+
+To check the running stack end to end, run `python scripts/smoke_test.py`. It posts one
+transaction and waits for both consumers to process it.
+
+## Continuous integration
+
+Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions:
+
+- **Tests and coverage**: one job per service runs `./gradlew check`, so all of that service's
+  tests and its 90% coverage gate. The coverage figures appear in the job summary.
+- **End-to-end (Docker Compose)**: builds and starts the whole stack, then runs the smoke test.
+
+`main` is protected: a pull request can only be merged when all four checks pass.
 
 ## Poke at the infrastructure
 
