@@ -16,9 +16,15 @@ bin/
 __pycache__/
 *.pyc
 
+# Playwright (playwright/)
+test-results/
+playwright-report/
+blob-report/
+
 # Node / frontend
 node_modules/
 dist/
+coverage/
 *.tsbuildinfo
 npm-debug.log*
 

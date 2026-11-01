@@ -1,0 +1,51 @@
+name: Gradle check
+description: Runs one service's tests and coverage gate, then publishes its coverage and reports.
+
+inputs:
+  service:
+    description: The service's folder name under services/
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      with:
+        distribution: temurin
+        java-version: "17"
+
+    # Caches Gradle downloads and validates the Gradle wrapper's checksum.
+    - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+    # Unit, slice and embedded-Kafka integration tests, then the JaCoCo gate
+    # (the build fails below 90% line coverage).
+    - name: Run tests and check coverage
+      shell: bash
+      working-directory: services/${{ inputs.service }}
+      run: ./gradlew check
+
+    - name: Add coverage to the job summary
+      if: always()
+      shell: bash
+      working-directory: services/${{ inputs.service }}
+      env:
+        SERVICE: ${{ inputs.service }}
+      run: |
+        python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+        import os, pathlib, xml.etree.ElementTree as ET
+        report = pathlib.Path("build/reports/jacoco/test/jacocoTestReport.xml")
+        print(f"### {os.environ['SERVICE']} coverage (minimum 90% of lines)")
+        counters = ET.parse(report).getroot().findall("counter") if report.exists() else []
+        for counter in (c for c in counters if c.get("type") in ("LINE", "BRANCH")):
+            missed, covered = int(counter.get("missed")), int(counter.get("covered"))
+            print(f"- {counter.get('type').title()}: {100 * covered / (missed + covered):.1f}%")
+        print("" if counters else "No report: the tests did not finish.")
+        EOF
+
+    - name: Upload test and coverage reports
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: reports-${{ inputs.service }}
+        path: services/${{ inputs.service }}/build/reports/
+        if-no-files-found: ignore

@@ -28,14 +28,14 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | 2 | transaction-service (producer) | ✅ Done |
 | 3 | fraud-service (consumer) | ✅ Done |
 | 4 | ledger-service (consumer) | ✅ Done |
-| 5 | React frontend | ⏳ |
+| 5 | React frontend | ✅ Done |
 | 6 | End-to-end integration, resilience demo, docs | ⏳ |
 
 ## Prerequisites
 
 - Docker Desktop (Compose v2)
-- JDK 17 and Node.js are needed only for running the services outside Docker. Gradle is
-  not needed, because each service has its own wrapper.
+- JDK 17 and Node.js 22.12 or later are needed only for building and testing outside Docker.
+  Gradle is not needed, because each service has its own wrapper.
 
 ## Run it
 
@@ -46,6 +46,7 @@ docker compose ps          # wait until every container shows "healthy"
 
 | What | Where |
 |---|---|
+| **The web app** | **http://localhost:3000** |
 | transaction-service API | http://localhost:8081/api/transactions |
 | fraud-service API | http://localhost:8082/api/risk/assessments |
 | ledger-service API | http://localhost:8083/api/ledger/accounts |
@@ -70,6 +71,22 @@ Stop everything with `docker compose down`. Add `-v` to also delete the Kafka an
 
 If you'd rather use an API client than curl, [services/bruno](services/bruno/README.md) has a
 [Bruno](https://www.usebruno.com) collection with every API.
+
+## Use the web app
+
+Open http://localhost:3000. Fill in the form, or pick a **demo scenario** to fill it with a case
+that trips a fraud rule, and send it. The result card shows the Kafka topic, partition, offset
+and key the transaction was published with. Within two seconds it appears in all three live
+panels: the transaction itself, fraud-service's risk score and rules, and ledger-service's
+updated balances and trial balance.
+
+nginx serves the page and forwards `/api/transactions`, `/api/risk` and `/api/ledger` to the
+services, so the browser only ever talks to one origin. Stop a consumer
+(`docker compose stop fraud-service`) and its panel warns that it can't be reached while the
+others carry on.
+
+To work on the UI with hot reload, run `npm install` and then `npm run dev` in `frontend/`, with
+the Compose stack running. The dev server proxies the APIs the same way.
 
 ## Try the transaction service
 
@@ -154,29 +171,43 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 cd services/transaction-service && ./gradlew check   # 60 tests
 cd services/fraud-service && ./gradlew check         # 77 tests
 cd services/ledger-service && ./gradlew check        # 60 tests
+cd frontend && npm ci && npm run check               # 75 tests
 ```
 
 Each service has unit tests, web and JPA slice tests, and a full-stack test against an
 embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
 dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
-checks that no update is lost.
+checks that no update is lost. The frontend's `check` type-checks the app, then runs Vitest
+and React Testing Library tests against a fake API, with the same 90% line-coverage gate. It
+is also at 100%, with its report in `frontend/coverage/index.html`.
 
 `check` also runs a JaCoCo coverage gate: the build fails if line coverage drops below 90%.
 All three services are currently at 100%. Each service's report is in
 `build/reports/jacoco/test/html/index.html`.
 
 To check the running stack end to end, run `python scripts/smoke_test.py`. It posts one
-transaction and waits for both consumers to process it.
+transaction and waits for both consumers to process it. For the same check through the browser,
+the [Playwright tests](playwright/README.md) drive the web app: they send payments and demo
+scenarios and wait for each one to reach all three panels.
 
 ## Continuous integration
 
-Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions:
+Every pull request to `main` runs the [CI workflow](.github/workflows/ci.yml) in GitHub Actions.
+A first **Detect changes** job works out what the pull request touched, and each later job runs
+only if its part of the repo changed:
 
-- **Tests and coverage**: one job per service runs `./gradlew check`, so all of that service's
-  tests and its 90% coverage gate. The coverage figures appear in the job summary.
-- **End-to-end (Docker Compose)**: builds and starts the whole stack, then runs the smoke test.
+| Job | Runs when | What it does |
+|---|---|---|
+| Tests and coverage (*service*) | that service changed | `./gradlew check`: every test plus the 90% coverage gate |
+| Tests and coverage (frontend) | `frontend/` changed | `npm run check`: type-check, tests and the 90% coverage gate |
+| End-to-end (Docker Compose) | anything other than docs changed | builds and starts the whole stack, then runs the smoke test through the web app's proxy |
+| End-to-end (Playwright) | anything other than docs changed | builds and starts the whole stack, then runs the [Playwright browser tests](playwright/README.md) |
 
-`main` is protected: a pull request can only be merged when all four checks pass.
+Markdown files and the Bruno collection never trigger tests on their own. A change to the
+pipeline itself runs every job. Coverage figures appear in each job's summary.
+
+`main` is protected: a pull request can only be merged when every check has passed or been
+skipped as unaffected.
 
 ## Poke at the infrastructure
 

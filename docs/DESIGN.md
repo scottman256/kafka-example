@@ -294,6 +294,22 @@ the browser has no CORS issues.
 - **"Demo scenarios" buttons:** pre-fill the form with cases that trigger specific fraud
   rules, such as a $9,500 payment, a self-payment or a velocity burst.
 
+**How it's built**
+- **Data:** each panel polls its own service through one small hook. A failed poll keeps the
+  last data on screen and shows a warning naming the service, so stopping a consumer is
+  visible but doesn't blank the page. The ledger panel reads its three endpoints together.
+- **API types:** like the consumers' event records, the TypeScript types hold only the fields
+  the UI uses.
+- **Validation:** client-side validation mirrors transaction-service's rules. Field errors the
+  server returns (a 400 problem detail) are shown on the same fields. A 503 or an unreachable
+  service is shown in the result card.
+- **nginx:** serves the built app and proxies `/api/transactions`, `/api/risk` and `/api/ledger`.
+  It resolves service names through Docker's DNS on every request (`resolver 127.0.0.11`), so
+  the page loads while a service is down and keeps working after a restarted service comes
+  back on a new IP. The image runs nginx as a non-root user.
+- **Tests:** Vitest with React Testing Library and a fake `fetch`, with the same 90% line
+  coverage gate as the Java services.
+
 ---
 
 ## 6. Tech stack & conventions
@@ -308,11 +324,14 @@ the browser has no CORS issues.
 - **Tests:** JUnit 5 + Mockito for unit tests; `@WebMvcTest` and `@DataJpaTest` slices; and
   `@EmbeddedKafka` with in-memory H2 for each service's full-stack tests. JaCoCo fails the build
   below 90% line coverage.
-- **CI:** GitHub Actions on every pull request to `main`. Each service's tests and coverage gate
-  run, and an end-to-end smoke test runs against the Docker Compose stack. `main` is protected,
-  so a pull request merges only when every check passes.
-- **React + TypeScript + Vite** (latest stable at build time), plain CSS (no UI framework,
-  to keep it light)
+- **CI:** GitHub Actions on every pull request to `main`. Each service and the frontend run
+  their tests and coverage gate only when their own folder changed. For any change other than
+  docs, two end-to-end jobs run against the Docker Compose stack: a smoke test and the Playwright
+  browser tests. Unaffected jobs are
+  skipped through job-level `if` conditions rather than trigger path filters. GitHub treats a
+  skipped job as passed, so every job can be a required check on the protected `main`.
+- **React 19 + TypeScript 7 + Vite 8**, with plain CSS (no UI framework, to keep it light).
+  Dependencies are pinned to exact versions, with a committed `package-lock.json`.
 
 **Pinned versions that must agree**
 | Component | Version | Why it's pinned |
@@ -338,7 +357,8 @@ kafka-example/
 │   ├── ledger-service/
 │   └── bruno/                   # Bruno API collection for every service
 ├── frontend/
-├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end check on every PR
+├── playwright/                  # browser end-to-end tests against the running stack
+├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end checks on every PR
 └── scripts/
     ├── smoke_test.py            # end-to-end check against the running stack
     └── demo.sh / demo.ps1       # sends sample transactions
