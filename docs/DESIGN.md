@@ -61,8 +61,8 @@ Host ports bind to `127.0.0.1` only. Containers reach Kafka at `kafka:9092` and 
    reads another service's database.
 2. **No service-to-service HTTP calls.** The services talk to each other only through Kafka.
 3. **No shared code library.** Each service has its own copy of the event contract (a Java
-   record). Producer type headers are turned off (`spring.json.add.type.headers=false`), so
-   consumers don't depend on the producer's class names.
+   record). Messages are plain JSON strings with no Java type headers, so consumers don't
+   depend on the producer's class names.
 4. **Independently deployable.** Each service is its own Gradle project, with its own
    wrapper, Dockerfile, config, Flyway migrations and tests.
 5. **Each service owns its read API.** The UI gets each service's data from that service,
@@ -122,25 +122,36 @@ publish `TransactionCreated` events.
 | POST | `/api/transactions` | Validate, save, publish. Returns the transaction and its Kafka metadata. |
 | GET  | `/api/transactions` | Most recent transactions (newest first, limit 50) |
 | GET  | `/api/transactions/{id}` | One transaction with its publish record |
+| GET  | `/api/transactions/source-banks` | The supported source banks, so the UI dropdown and server validation share one list |
 
-**Validation:** all fields required except memo; amount > 0 with at most 2 decimal places;
-payer and payee 2–100 characters; memo ≤ 255 characters; sourceBank must be in the known
-bank list.
+**Validation:** surrounding whitespace is stripped first, then: all fields required except
+memo; amount ≥ 0.01 with at most 2 decimal places; payer and payee 2–100 characters; memo ≤ 255
+characters; sourceBank must be one of the supported banks (exact match). Errors are returned as
+RFC 9457 problem details with a `fieldErrors` map (field → message).
 
 **Flow**
-1. Save `transaction` row.
-2. Build the event and send it with `KafkaTemplate`. Wait for the broker ack (bounded timeout).
-3. Write a `kafka_publish_log` row with the exact JSON payload sent plus the returned
-   `RecordMetadata`: topic, partition, offset, key and broker timestamp. Status is
-   `PUBLISHED`, or `FAILED` with the error.
-4. Return 201 with the transaction and the Kafka metadata. The UI shows this metadata.
+1. Save the `transactions` row.
+2. Build the event and serialize it to JSON in the service, then send it as a string. The
+   stored payload is therefore exactly the bytes sent. Wait for the broker ack.
+3. Write a `kafka_publish_log` row with that payload, the key, and the returned
+   `RecordMetadata`: partition, offset and broker timestamp. Status is `PUBLISHED`, or `FAILED`
+   with the error.
+4. Return **201** with the transaction and its Kafka metadata. If publishing failed, return
+   **503** with the `transactionId`. The transaction stays saved, and its log entry says
+   `FAILED`.
 
-**Producer config:** `acks=all`, `enable.idempotence=true`, retries with delivery timeout.
+**Producer config:** `acks=all`, `enable.idempotence=true`. Timeouts are short
+(`max.block.ms=5000`, `request.timeout.ms=5000`, `delivery.timeout.ms=10000`), so an
+unreachable broker fails the request in about 10s instead of the client default of 2 minutes.
 
 **Tables (`transactiondb`)**
 - `transactions` (id, transaction_date, payer, payee, amount, currency, memo, source_bank, created_at)
-- `kafka_publish_log` (event_id, transaction_id FK, topic, partition, offset, message_key,
-  kafka_timestamp, payload, status, error_message, published_at)
+- `kafka_publish_log` (id, event_id UNIQUE, transaction_id UNIQUE FK, topic, message_key,
+  payload, status, kafka_partition, kafka_offset, kafka_timestamp, error_message, logged_at)
+
+**Code layout:** `api` (controller, request/response records, validation, error handling) →
+`domain` (entity, repository, service) → `publishing` (event record, publisher, publish log).
+Dependencies only point in that direction.
 
 > Known trade-off: writing to the DB and then to Kafka is a "dual write". If the process
 > crashes between the two steps, the DB and Kafka can disagree. The production fix is the

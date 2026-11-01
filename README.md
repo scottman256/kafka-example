@@ -23,7 +23,7 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | Part | Scope | Status |
 |---|---|---|
 | 1 | Infrastructure: Kafka (KRaft) + H2 server + Compose | ✅ Done |
-| 2 | transaction-service (producer) | ⏳ |
+| 2 | transaction-service (producer) | ✅ Done |
 | 3 | fraud-service (consumer) | ⏳ |
 | 4 | ledger-service (consumer) | ⏳ |
 | 5 | React frontend | ⏳ |
@@ -44,6 +44,7 @@ docker compose ps          # wait until kafka and h2-db show "healthy"
 
 | What | Where |
 |---|---|
+| transaction-service API | http://localhost:8081/api/transactions |
 | Kafka (from your machine) | `localhost:29092` |
 | Kafka (from containers) | `kafka:9092` |
 | H2 web console | http://localhost:8090 |
@@ -62,6 +63,38 @@ To sign in to the H2 console, use the JDBC URL `jdbc:h2:tcp://localhost:9090/tra
 rejected by the other databases.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the Kafka and H2 data.
+
+## Try the transaction service
+
+```bash
+# Create a transaction. The response includes the Kafka topic, partition, offset and key.
+curl -i -X POST http://localhost:8081/api/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionDate":"2026-10-30","payer":"Alice Smith","payee":"Bobs Hardware",
+       "amount":125.50,"memo":"Lumber for deck","sourceBank":"First National Bank"}'
+
+curl http://localhost:8081/api/transactions                # recent transactions, newest first
+curl http://localhost:8081/api/transactions/<id>           # one transaction
+curl http://localhost:8081/api/transactions/source-banks   # banks accepted by validation
+```
+
+Responses:
+
+| Case | Status | Body |
+|---|---|---|
+| Saved and published | `201 Created` | The transaction, plus `kafka` details (status, partition, offset, key, payload) |
+| Invalid input | `400 Bad Request` | Problem detail with a `fieldErrors` map |
+| Kafka unreachable | `503 Service Unavailable` after about 10s | Problem detail with the `transactionId`. The transaction is saved, and its publish log entry is `FAILED`. |
+
+To see the dual-write trade-off for yourself, run `docker compose stop kafka`, post a
+transaction, then run `docker compose start kafka` and list the transactions.
+
+## Run the tests
+
+```bash
+cd services/transaction-service
+./gradlew test        # unit tests, web and JPA slice tests, full-stack test with embedded Kafka
+```
 
 ## Poke at the infrastructure
 
