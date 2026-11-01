@@ -22,30 +22,33 @@ public final class ScreeningFixtures {
 
 	public static final RecordPosition RECORD_POSITION = new RecordPosition(2, 7);
 
+	private static final String PAYER = "Alice Smith";
+
+	private static final String PAYEE = "Bob's Hardware";
+
+	private static final String AMOUNT = "125.50";
+
 	private ScreeningFixtures() {
 	}
 
 	public static TransactionCreatedEvent payment() {
-		return payment("Alice Smith", "Bob's Hardware", "125.50");
+		return payment(PAYER, PAYEE, AMOUNT);
 	}
 
 	public static TransactionCreatedEvent payment(String payer, String payee, String amount) {
-		return new TransactionCreatedEvent(UUID.randomUUID(), OCCURRED_AT, UUID.randomUUID(), TRANSACTION_DATE, payer,
-				payee, new BigDecimal(amount));
+		return event(OCCURRED_AT, TRANSACTION_DATE, payer, payee, amount);
 	}
 
 	public static TransactionCreatedEvent paymentOf(String amount) {
-		return payment("Alice Smith", "Bob's Hardware", amount);
+		return payment(PAYER, PAYEE, amount);
 	}
 
 	public static TransactionCreatedEvent paymentDated(LocalDate transactionDate) {
-		return new TransactionCreatedEvent(UUID.randomUUID(), OCCURRED_AT, UUID.randomUUID(), transactionDate,
-				"Alice Smith", "Bob's Hardware", new BigDecimal("125.50"));
+		return event(OCCURRED_AT, transactionDate, PAYER, PAYEE, AMOUNT);
 	}
 
 	public static TransactionCreatedEvent paymentBy(String payer, Instant occurredAt) {
-		return new TransactionCreatedEvent(UUID.randomUUID(), occurredAt, UUID.randomUUID(), TRANSACTION_DATE, payer,
-				"Bob's Hardware", new BigDecimal("125.50"));
+		return event(occurredAt, TRANSACTION_DATE, payer, PAYEE, AMOUNT);
 	}
 
 	public static RiskAssessment assessment(TransactionCreatedEvent transaction, RiskRule... triggeredRules) {
@@ -54,8 +57,14 @@ public final class ScreeningFixtures {
 
 	public static RiskAssessment assessment(TransactionCreatedEvent transaction, Instant assessedAt,
 			RiskRule... triggeredRules) {
-		return RiskAssessment.of(transaction, RiskScore.fromTriggeredRules(List.of(triggeredRules)), RECORD_POSITION,
+		return new RiskAssessment(transaction, RiskScore.fromTriggeredRules(List.of(triggeredRules)), RECORD_POSITION,
 				assessedAt);
+	}
+
+	private static TransactionCreatedEvent event(Instant occurredAt, LocalDate transactionDate, String payer,
+			String payee, String amount) {
+		return new TransactionCreatedEvent(UUID.randomUUID(), occurredAt, UUID.randomUUID(), transactionDate, payer,
+				payee, new BigDecimal(amount));
 	}
 
 }

@@ -31,8 +31,8 @@ class HighVelocityCheck implements FraudCheck {
 	@Override
 	public boolean isTriggeredBy(TransactionCreatedEvent transaction) {
 		Instant occurredAt = transaction.occurredAt();
-		long earlierPayments = riskAssessmentRepository.countPaymentsByPayerBetween(
-				PartyName.normalize(transaction.payer()), occurredAt.minus(WINDOW), occurredAt);
+		long earlierPayments = riskAssessmentRepository.countPaymentsByPayerBetween(transaction.normalizedPayer(),
+				occurredAt.minus(WINDOW), occurredAt);
 		return earlierPayments >= EARLIER_PAYMENTS_THRESHOLD;
 	}
 

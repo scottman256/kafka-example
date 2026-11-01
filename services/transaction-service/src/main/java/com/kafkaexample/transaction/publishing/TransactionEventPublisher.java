@@ -54,7 +54,7 @@ public class TransactionEventPublisher {
 
 	public KafkaPublishLogEntry publish(TransactionCreatedEvent event) {
 		ProducerRecord<String, String> producerRecord = toProducerRecord(event);
-		KafkaPublishLogEntry publishLogEntry = KafkaPublishLogEntry.forRecord(event, producerRecord);
+		KafkaPublishLogEntry publishLogEntry = new KafkaPublishLogEntry(event, producerRecord);
 		sendAndRecordOutcome(producerRecord, publishLogEntry);
 		return kafkaPublishLogRepository.save(publishLogEntry);
 	}

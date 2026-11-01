@@ -10,20 +10,16 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
-	@Query("""
+	String SELECT_WITH_PUBLISH_LOG = """
 			select new com.kafkaexample.transaction.domain.TransactionWithPublishLog(transaction, publishLogEntry)
 			from Transaction transaction
 			left join KafkaPublishLogEntry publishLogEntry on publishLogEntry.transactionId = transaction.id
-			order by transaction.createdAt desc
-			""")
+			""";
+
+	@Query(SELECT_WITH_PUBLISH_LOG + "order by transaction.createdAt desc")
 	List<TransactionWithPublishLog> findRecentWithPublishLog(Pageable pageable);
 
-	@Query("""
-			select new com.kafkaexample.transaction.domain.TransactionWithPublishLog(transaction, publishLogEntry)
-			from Transaction transaction
-			left join KafkaPublishLogEntry publishLogEntry on publishLogEntry.transactionId = transaction.id
-			where transaction.id = :id
-			""")
+	@Query(SELECT_WITH_PUBLISH_LOG + "where transaction.id = :id")
 	Optional<TransactionWithPublishLog> findWithPublishLogById(UUID id);
 
 }

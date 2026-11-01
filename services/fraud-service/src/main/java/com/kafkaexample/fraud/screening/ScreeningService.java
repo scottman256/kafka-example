@@ -36,7 +36,7 @@ public class ScreeningService {
 			return;
 		}
 		RiskScore riskScore = riskScorer.score(transaction);
-		riskAssessmentRepository.save(RiskAssessment.of(transaction, riskScore, recordPosition, clock.instant()));
+		riskAssessmentRepository.save(new RiskAssessment(transaction, riskScore, recordPosition, clock.instant()));
 		logger.info("Screened transaction {}: score {} ({}) {}", transaction.transactionId(), riskScore.score(),
 				riskScore.level(), riskScore.triggeredRules());
 	}

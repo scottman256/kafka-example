@@ -26,8 +26,8 @@ class NewPayeeHighValueCheck implements FraudCheck {
 	}
 
 	private boolean isFirstPaymentToPayee(TransactionCreatedEvent transaction) {
-		return !riskAssessmentRepository.existsByNormalizedPayerAndNormalizedPayee(
-				PartyName.normalize(transaction.payer()), PartyName.normalize(transaction.payee()));
+		return !riskAssessmentRepository.existsByNormalizedPayerAndNormalizedPayee(transaction.normalizedPayer(),
+				transaction.normalizedPayee());
 	}
 
 }

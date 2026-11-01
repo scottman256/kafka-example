@@ -33,7 +33,7 @@ public class TransactionService {
 	 * so a failed publish leaves a saved transaction with a FAILED publish log entry.
 	 */
 	public TransactionWithPublishLog create(NewTransaction newTransaction) {
-		Transaction transaction = transactionRepository.save(Transaction.create(newTransaction, clock.instant()));
+		Transaction transaction = transactionRepository.save(new Transaction(newTransaction, clock.instant()));
 		KafkaPublishLogEntry publishLogEntry = transactionEventPublisher.publish(transaction.toCreatedEvent(clock.instant()));
 		if (!publishLogEntry.isPublished()) {
 			throw new TransactionNotPublishedException(transaction.getId(), publishLogEntry.getErrorMessage());

@@ -21,25 +21,12 @@ spring:
       group-id: fraud-service
       # A brand-new consumer group starts at the beginning of the topic, so no transaction is missed.
       auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    # The producer is only used to publish failed records to the dead-letter topic.
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all
     listener:
       # One consumer thread per partition of transactions.created.
       concurrency: 3
 
 server:
   port: ${SERVER_PORT:8082}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health
 
 app:
   kafka:

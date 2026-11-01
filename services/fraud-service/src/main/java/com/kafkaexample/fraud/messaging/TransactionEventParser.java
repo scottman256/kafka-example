@@ -13,10 +13,14 @@ public class TransactionEventParser {
 
 	private final ObjectReader eventReader;
 
-	/** A tolerant reader: unknown fields are ignored, so the producer can add fields without breaking this service. */
+	/**
+	 * A tolerant reader: unknown fields are ignored, so the producer can add fields without
+	 * breaking this service. Every field this service does read is required.
+	 */
 	public TransactionEventParser(JsonMapper jsonMapper) {
 		this.eventReader = jsonMapper.readerFor(TransactionCreatedEvent.class)
-			.without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+			.without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+			.with(DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES);
 	}
 
 	public TransactionCreatedEvent parse(String json) {

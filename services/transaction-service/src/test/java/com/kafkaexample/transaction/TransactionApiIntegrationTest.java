@@ -42,17 +42,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EmbeddedKafka(partitions = 3, topics = TransactionFixtures.TOPIC)
 class TransactionApiIntegrationTest {
 
-	private static final String REQUEST = """
-			{
-			  "transactionDate": "2026-10-30",
-			  "payer": "Alice Smith",
-			  "payee": "Bob's Hardware",
-			  "amount": 125.50,
-			  "memo": "Lumber for deck",
-			  "sourceBank": "First National Bank"
-			}
-			""";
-
 	@Autowired
 	private MockMvcTester mockMvc;
 
@@ -99,13 +88,13 @@ class TransactionApiIntegrationTest {
 	void invalidTransactionIsNeitherStoredNorPublished() {
 		long transactionsBefore = transactionRepository.count();
 
-		assertThat(post(REQUEST.replace("125.50", "-1"))).hasStatus(HttpStatus.BAD_REQUEST);
+		assertThat(post(TransactionFixtures.CREATE_REQUEST_JSON.replace("125.50", "-1"))).hasStatus(HttpStatus.BAD_REQUEST);
 
 		assertThat(transactionRepository.count()).isEqualTo(transactionsBefore);
 	}
 
 	private TransactionResponse createTransaction() {
-		MvcTestResult result = post(REQUEST);
+		MvcTestResult result = post(TransactionFixtures.CREATE_REQUEST_JSON);
 		assertThat(result).hasStatus(HttpStatus.CREATED);
 		return jsonMapper.readValue(result.getResponse().getContentAsByteArray(), TransactionResponse.class);
 	}

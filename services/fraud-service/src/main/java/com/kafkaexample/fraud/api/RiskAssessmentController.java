@@ -3,6 +3,7 @@ package com.kafkaexample.fraud.api;
 import java.util.List;
 import java.util.UUID;
 
+import com.kafkaexample.fraud.screening.RiskAssessment;
 import com.kafkaexample.fraud.screening.RiskAssessmentQueryService;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +23,7 @@ public class RiskAssessmentController {
 
 	@GetMapping("/assessments")
 	public List<RiskAssessmentResponse> findRecent() {
-		return riskAssessmentQueryService.findRecent().stream().map(RiskAssessmentResponse::from).toList();
+		return toResponses(riskAssessmentQueryService.findRecent());
 	}
 
 	@GetMapping("/assessments/{transactionId}")
@@ -32,7 +33,11 @@ public class RiskAssessmentController {
 
 	@GetMapping("/alerts")
 	public List<RiskAssessmentResponse> findAlerts() {
-		return riskAssessmentQueryService.findFlagged().stream().map(RiskAssessmentResponse::from).toList();
+		return toResponses(riskAssessmentQueryService.findFlagged());
+	}
+
+	private static List<RiskAssessmentResponse> toResponses(List<RiskAssessment> assessments) {
+		return assessments.stream().map(RiskAssessmentResponse::from).toList();
 	}
 
 }

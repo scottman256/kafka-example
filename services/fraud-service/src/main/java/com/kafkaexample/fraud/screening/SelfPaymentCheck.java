@@ -12,7 +12,7 @@ class SelfPaymentCheck implements FraudCheck {
 
 	@Override
 	public boolean isTriggeredBy(TransactionCreatedEvent transaction) {
-		return PartyName.normalize(transaction.payer()).equals(PartyName.normalize(transaction.payee()));
+		return transaction.normalizedPayer().equals(transaction.normalizedPayee());
 	}
 
 }

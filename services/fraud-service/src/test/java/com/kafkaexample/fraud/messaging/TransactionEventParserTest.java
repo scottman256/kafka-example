@@ -54,7 +54,16 @@ class TransactionEventParserTest {
 
 		assertThatThrownBy(() -> parser.parse(eventWithoutPayer))
 			.isInstanceOf(InvalidTransactionEventException.class)
-			.hasMessageContaining("payer is required");
+			.hasMessageContaining("'payer'");
+	}
+
+	@Test
+	void rejectsAnEventWithANullRequiredField() {
+		String eventWithNullAmount = PUBLISHED_EVENT.replace("\"amount\":125.50", "\"amount\":null");
+
+		assertThatThrownBy(() -> parser.parse(eventWithNullAmount))
+			.isInstanceOf(InvalidTransactionEventException.class)
+			.hasMessageContaining("'amount'");
 	}
 
 	@Test

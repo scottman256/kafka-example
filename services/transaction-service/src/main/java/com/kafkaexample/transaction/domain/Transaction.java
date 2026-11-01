@@ -43,7 +43,7 @@ public class Transaction {
 	protected Transaction() {
 	}
 
-	private Transaction(NewTransaction newTransaction, Instant createdAt) {
+	public Transaction(NewTransaction newTransaction, Instant createdAt) {
 		this.transactionDate = newTransaction.transactionDate();
 		this.payer = newTransaction.payer();
 		this.payee = newTransaction.payee();
@@ -52,10 +52,6 @@ public class Transaction {
 		this.memo = newTransaction.memo();
 		this.sourceBank = newTransaction.sourceBank();
 		this.createdAt = createdAt;
-	}
-
-	public static Transaction create(NewTransaction newTransaction, Instant createdAt) {
-		return new Transaction(newTransaction, createdAt);
 	}
 
 	public TransactionCreatedEvent toCreatedEvent(Instant occurredAt) {

@@ -18,7 +18,7 @@ class RiskAssessmentTest {
 			RiskRule.NEW_PAYEE_HIGH_VALUE);
 
 	@Test
-	void ofCopiesTheTransactionDetails() {
+	void copiesTheTransactionDetails() {
 		assertThat(assessment.getEventId()).isEqualTo(transaction.eventId());
 		assertThat(assessment.getTransactionId()).isEqualTo(transaction.transactionId());
 		assertThat(assessment.getPayer()).isEqualTo(" Alice Smith");
@@ -28,7 +28,7 @@ class RiskAssessmentTest {
 	}
 
 	@Test
-	void ofRecordsTheScoreAndWhereTheEventWasRead() {
+	void recordsTheScoreAndWhereTheEventWasRead() {
 		assertThat(assessment.getRiskScore()).isEqualTo(45);
 		assertThat(assessment.getRiskLevel()).isEqualTo(RiskLevel.MEDIUM);
 		assertThat(assessment.getTriggeredRules()).containsExactlyInAnyOrder(RiskRule.POSSIBLE_STRUCTURING,

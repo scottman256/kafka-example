@@ -67,14 +67,14 @@ public class RiskAssessment {
 	protected RiskAssessment() {
 	}
 
-	private RiskAssessment(TransactionCreatedEvent transaction, RiskScore riskScore, RecordPosition recordPosition,
+	public RiskAssessment(TransactionCreatedEvent transaction, RiskScore riskScore, RecordPosition recordPosition,
 			Instant assessedAt) {
 		this.eventId = transaction.eventId();
 		this.transactionId = transaction.transactionId();
 		this.payer = transaction.payer();
 		this.payee = transaction.payee();
-		this.normalizedPayer = PartyName.normalize(transaction.payer());
-		this.normalizedPayee = PartyName.normalize(transaction.payee());
+		this.normalizedPayer = transaction.normalizedPayer();
+		this.normalizedPayee = transaction.normalizedPayee();
 		this.amount = transaction.amount();
 		this.occurredAt = transaction.occurredAt();
 		this.riskScore = riskScore.score();
@@ -83,15 +83,6 @@ public class RiskAssessment {
 		this.kafkaPartition = recordPosition.partition();
 		this.kafkaOffset = recordPosition.offset();
 		this.assessedAt = assessedAt;
-	}
-
-	public static RiskAssessment of(TransactionCreatedEvent transaction, RiskScore riskScore,
-			RecordPosition recordPosition, Instant assessedAt) {
-		return new RiskAssessment(transaction, riskScore, recordPosition, assessedAt);
-	}
-
-	public UUID getId() {
-		return id;
 	}
 
 	public UUID getEventId() {

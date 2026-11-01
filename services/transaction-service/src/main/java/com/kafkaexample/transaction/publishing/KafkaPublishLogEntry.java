@@ -49,17 +49,13 @@ public class KafkaPublishLogEntry {
 	protected KafkaPublishLogEntry() {
 	}
 
-	private KafkaPublishLogEntry(TransactionCreatedEvent event, ProducerRecord<String, String> producerRecord) {
+	public KafkaPublishLogEntry(TransactionCreatedEvent event, ProducerRecord<String, String> producerRecord) {
 		this.eventId = event.eventId();
 		this.transactionId = event.transactionId();
 		this.topic = producerRecord.topic();
 		this.messageKey = producerRecord.key();
 		this.payload = producerRecord.value();
 		this.status = PublishStatus.PENDING;
-	}
-
-	public static KafkaPublishLogEntry forRecord(TransactionCreatedEvent event, ProducerRecord<String, String> producerRecord) {
-		return new KafkaPublishLogEntry(event, producerRecord);
 	}
 
 	public void markPublished(RecordMetadata metadata, Instant loggedAt) {
