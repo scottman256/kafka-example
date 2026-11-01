@@ -10,6 +10,14 @@ and publishes a `TransactionCreated` event. Two independent consumer services re
 The whole environment runs with Docker Compose: 6 containers, each service owning its own
 database. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
+## Built with AI assistance
+
+This solution was co-authored with **Claude Opus 5.5**, Anthropic's AI model, working in
+Claude Code. I set the requirements and coding standards, chose among the design options,
+and directed the build one part at a time. Claude drafted the design and wrote the code
+with me. Every commit we made together carries a `Co-Authored-By: Claude Opus 5.5` trailer.
+The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
+
 ## Build status
 
 | Part | Scope | Status |
