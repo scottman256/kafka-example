@@ -224,24 +224,53 @@ history checks), and `triggered_rules` (assessment id + rule code).
 entry. The service keeps a running balance for every party and a funds-outflow total for
 every source bank. It cares about *money movement*, not risk.
 
-**Consumer group:** `ledger-service`
+**Consumer group:** `ledger-service`. Like fraud-service, it runs 3 listener threads (one per
+partition) and starts from the earliest offset, so on first start it posts the topic's whole
+history.
 
-**Posting logic** (one journal entry per event, two lines that must sum to zero)
+**Posting logic** (one journal entry per event, two lines that sum to zero)
 - Line 1: payer account **DEBIT** −amount (funds out)
 - Line 2: payee account **CREDIT** +amount (funds in)
-- Accounts are created on first sight. The balance update and the journal insert happen in
-  one DB transaction, together with the `processed_events` idempotency row.
+- An account's balance is the party's net position: everything it has received minus
+  everything it has paid. Accounts are opened the first time a party appears, matched by
+  name ignoring case and surrounding spaces.
 - The bank summary adds the amount and a count to the transaction's `sourceBank`.
+- The journal entry, both balance updates and the bank summary are written in one DB
+  transaction.
+- A self-payment posts both lines to the same account, so its balance is unchanged.
+
+**Concurrent postings:** payer-keyed partitioning keeps each payer's events in order, but a
+payee can be paid from any partition, and every payment updates a bank summary. So two
+listener threads can update the same row at once, and a plain read-modify-write would lose
+one of the updates. Each posting therefore locks the rows it changes (`SELECT … FOR UPDATE`).
+It locks its accounts in name order and its bank last, so two postings that share rows always
+lock them in the same order and can't deadlock. When two postings open the same new account at
+once, one hits the unique name and is retried by the error handler; by then the account exists.
+An integration test sends 30 concurrent payments to one payee and checks that none is lost.
+In a check run with the locks removed, 11 of the 30 updates were lost and the test failed.
+
+**Idempotency:** `journal_entries.event_id` is `UNIQUE`, and the service checks it first, in the
+same DB transaction as the posting. As in fraud-service, the journal entry is the record of
+what has been processed, so no separate `processed_events` table is needed. A redelivered event
+is skipped and never double-posts.
+
+**Event contract and errors:** same as fraud-service. The service has its own
+`TransactionCreatedEvent` with only the fields it uses (`memo` and `currency` are not read; the
+ledger is in USD, as every event is). Unknown fields are ignored and missing or null fields are
+rejected. Invalid records go straight to `transactions.created.ledger-service.DLT`. Other
+failures are retried 3 times (0.5s, 1s, 2s) first.
 
 **API**
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/ledger/accounts` | All accounts with current balance and entry count |
-| GET | `/api/ledger/accounts/{name}/entries` | Journal lines for one account |
+| GET | `/api/ledger/accounts` | All accounts, by name, with current balance and entry count |
+| GET | `/api/ledger/accounts/{name}/entries` | The account's 50 most recent journal lines: side, signed amount, counterparty, bank and the partition/offset consumed (404 for an unknown account) |
 | GET | `/api/ledger/banks` | Total outflow and count per source bank |
-| GET | `/api/ledger/trial-balance` | Sum of all balances. It must be 0.00, which proves the ledger is consistent. |
+| GET | `/api/ledger/trial-balance` | Account count, total debit balances, total credit balances and the net. The net must be 0.00 (`balanced: true`), which proves the balances are consistent with the journal. |
 
-**Tables (`ledgerdb`):** `accounts`, `journal_entries`, `journal_lines`, `bank_summaries`, `processed_events`
+**Tables (`ledgerdb`):** `accounts` (unique normalized name), `journal_entries` (unique event
+id and transaction id), `journal_lines` (entry, account, signed amount; indexed by account) and
+`bank_summaries` (unique bank name).
 
 > Design note: the two consumers are deliberately independent (fan-out). In a real bank the
 > ledger might only post after fraud approval. That would be a follow-on event

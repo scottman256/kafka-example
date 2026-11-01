@@ -133,6 +133,27 @@ services:
     ports:
       - "127.0.0.1:${FRAUD_SERVICE_HOST_PORT}:8082"
 
+  # ---------------------------------------------------------------------------
+  # ledger-service: Kafka consumer (group ledger-service) that posts every
+  # transaction to a double-entry ledger. It owns ledgerdb and does not depend
+  # on the other services.
+  # ---------------------------------------------------------------------------
+  ledger-service:
+    <<: *java-service
+    build:
+      context: ./services/ledger-service
+    image: kafka-example/ledger-service:latest
+    environment:
+      SERVER_PORT: 8083
+      DB_URL: jdbc:h2:tcp://h2-db:9090/${LEDGER_DB_NAME}
+      DB_USER: ${LEDGER_DB_USER}
+      DB_PASSWORD: ${LEDGER_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRANSACTIONS_TOPIC: ${TRANSACTIONS_TOPIC}
+      DEAD_LETTER_TOPIC: ${TRANSACTIONS_TOPIC}.ledger-service.DLT
+    ports:
+      - "127.0.0.1:${LEDGER_SERVICE_HOST_PORT}:8083"
+
 volumes:
   kafka-data:
   h2-data:

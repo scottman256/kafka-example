@@ -25,7 +25,7 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | 1 | Infrastructure: Kafka (KRaft) + H2 server + Compose | ✅ Done |
 | 2 | transaction-service (producer) | ✅ Done |
 | 3 | fraud-service (consumer) | ✅ Done |
-| 4 | ledger-service (consumer) | ⏳ |
+| 4 | ledger-service (consumer) | ✅ Done |
 | 5 | React frontend | ⏳ |
 | 6 | End-to-end integration, resilience demo, docs | ⏳ |
 
@@ -46,6 +46,7 @@ docker compose ps          # wait until every container shows "healthy"
 |---|---|
 | transaction-service API | http://localhost:8081/api/transactions |
 | fraud-service API | http://localhost:8082/api/risk/assessments |
+| ledger-service API | http://localhost:8083/api/ledger/accounts |
 | Kafka (from your machine) | `localhost:29092` |
 | Kafka (from containers) | `kafka:9092` |
 | H2 web console | http://localhost:8090 |
@@ -120,16 +121,40 @@ A record that isn't a valid event, such as malformed JSON, goes straight to
 `transactions.created.fraud-service.DLT` with `kafka_dlt-*` headers explaining why. Other
 failures are retried 3 times first. Either way the partition keeps moving.
 
+## Watch the ledger post double entries
+
+ledger-service reads the same events in its own consumer group and posts each one as a
+journal entry: a debit on the payer's account and an equal credit on the payee's. Post a
+transaction, then look at the ledger:
+
+```bash
+curl http://localhost:8083/api/ledger/accounts                           # every balance
+curl "http://localhost:8083/api/ledger/accounts/Bob's%20Hardware/entries"  # one account's lines
+curl http://localhost:8083/api/ledger/banks                              # outflow per source bank
+curl http://localhost:8083/api/ledger/trial-balance                      # must net to 0.00
+```
+
+A payer's balance goes down and the payee's goes up by the same amount, so the trial balance
+always nets to zero. Because both consumers read the same event independently, the
+transaction also appears in fraud-service. To see that each group tracks its own offsets:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group ledger-service
+```
+
 ## Run the tests
 
 ```bash
 cd services/transaction-service && ./gradlew test   # 54 tests
 cd services/fraud-service && ./gradlew test         # 70 tests
+cd services/ledger-service && ./gradlew test        # 59 tests
 ```
 
 Each service has unit tests, web and JPA slice tests, and a full-stack test against an
-embedded Kafka broker. The fraud-service suite also covers redelivery (idempotency) and the
-dead-letter topic.
+embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
+dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
+checks that no update is lost.
 
 ## Poke at the infrastructure
 
