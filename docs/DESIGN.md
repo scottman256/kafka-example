@@ -326,10 +326,10 @@ the browser has no CORS issues.
   below 90% line coverage.
 - **CI:** GitHub Actions on every pull request to `main`. Each service and the frontend run
   their tests and coverage gate only when their own folder changed. For any change other than
-  docs, two end-to-end jobs run against the Docker Compose stack: a smoke test and the Playwright
-  browser tests. Unaffected jobs are
-  skipped through job-level `if` conditions rather than trigger path filters. GitHub treats a
-  skipped job as passed, so every job can be a required check on the protected `main`.
+  docs, two end-to-end jobs run against the Docker Compose stack. One runs the smoke test, the
+  scripted demo and the resilience demo; the other runs the Playwright browser tests. Unaffected
+  jobs are skipped through job-level `if` conditions rather than trigger path filters. GitHub
+  treats a skipped job as passed, so every job can be a required check on the protected `main`.
 - **React 19 + TypeScript 7 + Vite 8**, with plain CSS (no UI framework, to keep it light).
   Dependencies are pinned to exact versions, with a committed `package-lock.json`.
 
@@ -338,8 +338,13 @@ the browser has no CORS issues.
 |---|---|---|
 | Kafka broker | 4.2.2 | Same as the `kafka-clients` version Spring Boot 4.1.x ships |
 | H2 server | 2.4.240 | Same as Spring Boot 4.1.x's managed H2 driver; the TCP protocol expects matching versions |
-- **Docker Compose:** health checks on every container; `depends_on: condition: service_healthy`
-  controls startup order; a named volume keeps H2 data
+- **Docker Compose:**
+  - **Every container:** a health check, a restart policy (`unless-stopped`) and a memory limit.
+    The Java services' JVMs size their heaps from that limit (75%), not from the host's memory.
+  - **Startup order:** `depends_on: condition: service_healthy` starts the Java services only
+    after Kafka and H2 are healthy. The web app doesn't wait, so it can report an unreachable
+    service.
+  - **Data:** named volumes keep the Kafka and H2 data.
 
 **Repository layout**
 ```
@@ -359,9 +364,11 @@ kafka-example/
 ├── frontend/
 ├── playwright/                  # browser end-to-end tests against the running stack
 ├── .github/workflows/ci.yml     # tests, coverage gate and end-to-end checks on every PR
-└── scripts/
-    ├── smoke_test.py            # end-to-end check against the running stack
-    └── demo.sh / demo.ps1       # sends sample transactions
+└── scripts/                     # Python 3, standard library only
+    ├── demo.py                  # sends a payment for every fraud rule and shows each outcome
+    ├── resilience_demo.py       # stops a consumer, sends payments, watches it catch up
+    ├── smoke_test.py            # one payment through both consumers
+    └── stack_client.py          # HTTP helpers the scripts share
 ```
 
 ---
@@ -411,10 +418,12 @@ Each part ends in a working, testable state. Later parts depend only on earlier 
   three panels.
 
 ### Part 6 — End-to-end integration, hardening & docs
-- Full-stack startup check: health checks, startup order, restart policies, clean cold start
-- Resilience demo: stop a consumer, send transactions, restart it, and watch it catch up from
-  its committed offset (the core Kafka selling point)
-- `scripts/demo` that sends a scripted scenario set
+- Full-stack startup check: health checks, startup order, restart policies, a memory limit on
+  every container, and a clean cold start from a fresh clone
+- Resilience demo (`scripts/resilience_demo.py`): stop a consumer, send transactions, restart
+  it, and watch it catch up from its committed offset (the core Kafka selling point). CI runs
+  it on every pull request.
+- `scripts/demo.py`, which sends a scripted scenario set and prints how each consumer handled it
 - README: architecture diagram, how to run, demo walkthrough, design decisions and
   trade-offs, and talking points for interviews
 - **Done when:** a fresh clone runs with `docker compose up --build` and the walkthrough works.

@@ -1,8 +1,12 @@
 name: kafka-example
 
-# Startup order, health check and restart policy shared by every Java service. Each service
-# merges it in with "<<: *java-service" and sets SERVER_PORT, which the health check reads.
+# Startup order, health check, restart policy and memory limit shared by every Java service.
+# Each service merges it in with "<<: *java-service" and sets SERVER_PORT, which the health
+# check reads.
 x-java-service: &java-service
+  # The JVM sizes its heap at 75% of this (-XX:MaxRAMPercentage=75 in each Dockerfile). Without
+  # a limit it would size it from the whole machine's memory.
+  mem_limit: 1g
   depends_on:
     kafka:
       condition: service_healthy
@@ -27,6 +31,8 @@ services:
     image: apache/kafka:${KAFKA_VERSION}
     hostname: kafka
     init: true
+    # The image starts the broker with a fixed 1 GB heap; this leaves room for the rest.
+    mem_limit: 1536m
     command: ["bash", "/opt/demo/start.sh"]
     environment:
       CLUSTER_ID: ${KAFKA_CLUSTER_ID}
@@ -77,6 +83,7 @@ services:
       context: ./infra/h2
     image: kafka-example/h2-db:2.4.240
     hostname: h2-db
+    mem_limit: 512m
     environment:
       H2_DATABASES: >-
         ${TRANSACTION_DB_NAME}:${TRANSACTION_DB_USER}:${TRANSACTION_DB_PASSWORD},${FRAUD_DB_NAME}:${FRAUD_DB_USER}:${FRAUD_DB_PASSWORD},${LEDGER_DB_NAME}:${LEDGER_DB_USER}:${LEDGER_DB_PASSWORD}
@@ -163,6 +170,7 @@ services:
     build:
       context: ./frontend
     image: kafka-example/frontend:latest
+    mem_limit: 128m
     ports:
       - "127.0.0.1:${FRONTEND_HOST_PORT}:8080"
     healthcheck:

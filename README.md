@@ -12,6 +12,41 @@ and publishes a `TransactionCreated` event. Two independent consumer services re
 The whole environment runs with Docker Compose: 6 containers, each service owning its own
 database. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
+**Contents:** [Architecture](#architecture) · [Run it](#run-it) · [Demo walkthrough](#demo-walkthrough) ·
+[Design decisions and trade-offs](#design-decisions-and-trade-offs) · [Talking points](#talking-points) ·
+[Explore each service](#explore-each-service) · [Run the tests](#run-the-tests) ·
+[Continuous integration](#continuous-integration) · [Poke at the infrastructure](#poke-at-the-infrastructure)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    browser([Browser]) --> frontend["frontend<br/>React + nginx<br/>:3000"]
+    frontend -- /api/transactions --> transaction["transaction-service<br/>REST + Kafka producer<br/>:8081"]
+    frontend -- /api/risk --> fraud["fraud-service<br/>consumer: risk screening<br/>:8082"]
+    frontend -- /api/ledger --> ledger["ledger-service<br/>consumer: double-entry ledger<br/>:8083"]
+    transaction -- "TransactionCreated<br/>key = payer" --> topic[["Kafka topic<br/>transactions.created<br/>3 partitions"]]
+    topic -- "consumer group<br/>fraud-service" --> fraud
+    topic -- "consumer group<br/>ledger-service" --> ledger
+    fraud -. "records it can't process" .-> fraudDlt[["fraud-service<br/>dead-letter topic"]]
+    ledger -. "records it can't process" .-> ledgerDlt[["ledger-service<br/>dead-letter topic"]]
+    subgraph h2 ["h2-db: one database and login per service"]
+        transactiondb[(transactiondb)]
+        frauddb[(frauddb)]
+        ledgerdb[(ledgerdb)]
+    end
+    transaction --- transactiondb
+    fraud --- frauddb
+    ledger --- ledgerdb
+```
+
+1. The browser only talks to nginx, which serves the React app and forwards each `/api/*`
+   prefix to its service.
+2. transaction-service saves the transaction, publishes one `TransactionCreated` event keyed by
+   payer, and returns the partition and offset it landed on.
+3. fraud-service and ledger-service read that same event in their own consumer groups, each
+   keeping its own offsets and its own database. The services never call each other.
+
 ## Built with AI assistance
 
 This solution was co-authored with **Claude Opus 5.5**, Anthropic's AI model, working in
@@ -29,20 +64,25 @@ The standards Claude follows in this repo are in [CLAUDE.md](CLAUDE.md).
 | 3 | fraud-service (consumer) | ✅ Done |
 | 4 | ledger-service (consumer) | ✅ Done |
 | 5 | React frontend | ✅ Done |
-| 6 | End-to-end integration, resilience demo, docs | ⏳ |
+| 6 | End-to-end integration, resilience demo, docs | ✅ Done |
 
 ## Prerequisites
 
-- Docker Desktop (Compose v2)
+- **Docker Desktop** (Compose v2). The containers are capped at about 5 GB of memory in total
+  and use about 1.6 GB after a fresh start.
+- **Python 3** to run the demo scripts in `scripts/`. They only use the standard library.
 - JDK 17 and Node.js 22.12 or later are needed only for building and testing outside Docker.
   Gradle is not needed, because each service has its own wrapper.
 
 ## Run it
 
 ```bash
-docker compose up -d --build
-docker compose ps          # wait until every container shows "healthy"
+docker compose up -d --build --wait
 ```
+
+`--wait` returns once every container is healthy. The first build downloads Gradle and npm
+dependencies and takes a few minutes. After that, a cold start from empty volumes takes about
+half a minute.
 
 | What | Where |
 |---|---|
@@ -72,7 +112,9 @@ Stop everything with `docker compose down`. Add `-v` to also delete the Kafka an
 If you'd rather use an API client than curl, [services/bruno](services/bruno/README.md) has a
 [Bruno](https://www.usebruno.com) collection with every API.
 
-## Use the web app
+## Demo walkthrough
+
+### 1. Send a transaction from the web app
 
 Open http://localhost:3000. Fill in the form, or pick a **demo scenario** to fill it with a case
 that trips a fraud rule, and send it. The result card shows the Kafka topic, partition, offset
@@ -80,15 +122,136 @@ and key the transaction was published with. Within two seconds it appears in all
 panels: the transaction itself, fraud-service's risk score and rules, and ledger-service's
 updated balances and trial balance.
 
-nginx serves the page and forwards `/api/transactions`, `/api/risk` and `/api/ledger` to the
-services, so the browser only ever talks to one origin. Stop a consumer
-(`docker compose stop fraud-service`) and its panel warns that it can't be reached while the
-others carry on.
+Send the **Velocity burst** scenario four times: all four land on the same partition, because
+they share a payer, and only the fourth is flagged.
 
-To work on the UI with hot reload, run `npm install` and then `npm run dev` in `frontend/`, with
-the Compose stack running. The dev server proxies the APIs the same way.
+### 2. Run the scripted demo
 
-## Try the transaction service
+```bash
+python scripts/demo.py
+```
+
+It sends nine payments that between them trip every fraud rule, waits for both consumers, and
+prints what each one did:
+
+```
+Scenario            Payment                                    Published to Kafka     Risk       Rules triggered
+------------------  -----------------------------------------  ---------------------  ---------  --------------------------------------------------------
+Everyday purchase   Alice Smith -> Bob's Hardware  $125.50     partition 2, offset 0  LOW 0      -
+Just under $10,000  Nina Patel -> Cash Exchange Co  $9,500.00  partition 2, offset 1  MEDIUM 45  POSSIBLE_STRUCTURING, NEW_PAYEE_HIGH_VALUE
+Large payment       Grace Hopper -> Acme Motors  $15,000.00    partition 1, offset 0  MEDIUM 55  LARGE_AMOUNT, NEW_PAYEE_HIGH_VALUE
+Self-payment        Mallory Black -> Mallory Black  $9,500.00  partition 1, offset 1  HIGH 95    POSSIBLE_STRUCTURING, SELF_PAYMENT, NEW_PAYEE_HIGH_VALUE
+Future-dated        Frank Ocean -> Landlord LLC  $1,200.00     partition 1, offset 2  MEDIUM 35  NEW_PAYEE_HIGH_VALUE, DATE_ANOMALY
+Velocity burst      Victor Quick -> Coffee Shop  $4.50         partition 2, offset 2  LOW 0      -
+...
+Velocity burst      Victor Quick -> Coffee Shop  $4.50         partition 2, offset 5  MEDIUM 30  HIGH_VELOCITY
+
+Ledger: 13 accounts; debit and credit balances both $25,885.50, so the trial balance nets to zero.
+```
+
+### 3. Stop a consumer and watch it catch up
+
+This is Kafka's core selling point: a consumer that goes down loses nothing, because the broker
+keeps its place.
+
+```bash
+python scripts/resilience_demo.py
+```
+
+```
+1. Stopping ledger-service. fraud-service keeps running.
+2. Sending 3 payments to Resilience Store 4d3b0d while it is down
+   partition 1, offset 3: screened by fraud-service (LOW)
+   partition 1, offset 4: screened by fraud-service (LOW)
+   partition 0, offset 1: screened by fraud-service (LOW)
+   ledger-service is 3 events behind: Kafka holds them until it comes back
+3. Starting ledger-service again
+4. ledger-service caught up from its committed offset in 10s, including startup:
+   all 3 payments posted, lag 0
+   The trial balance still nets to zero.
+```
+
+To do it by hand instead: run `docker compose stop ledger-service`, then send a few payments in
+the web app. The Ledger panel says it can't reach ledger-service while the other two panels
+keep updating. Check the lag:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group ledger-service
+```
+
+Then run `docker compose start ledger-service` and watch the Ledger panel fill in.
+
+### 4. Send a record that can never be processed
+
+```bash
+docker compose exec kafka bash -c "echo 'this is not json' | /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server kafka:9092 --topic transactions.created"
+
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 \
+  --topic transactions.created.fraud-service.DLT --from-beginning --formatter-property print.headers=true
+```
+
+Each consumer moves the record straight to its own dead-letter topic, with `kafka_dlt-*` headers
+saying why, and carries on with the next record. Press Ctrl+C to stop reading.
+
+### 5. See the dual-write trade-off
+
+Run `docker compose stop kafka` and send a payment. Within about 10 seconds transaction-service
+answers 503: the transaction is saved, but its publish log entry is `FAILED`. Run
+`docker compose start kafka` afterwards. The [design decisions](#design-decisions-and-trade-offs)
+explain why this happens and what would fix it.
+
+## Design decisions and trade-offs
+
+| Decision | Why | Trade-off |
+|---|---|---|
+| Save the transaction, then publish, recording the outcome in a publish log | Simple, and the API can say exactly where the event landed | A crash or broker outage between the two leaves a saved but unpublished transaction. A transactional outbox would close the gap. |
+| Key every event by payer | One payer's events stay in order on one partition, which the velocity rule relies on | A payee can be paid from any partition, so the ledger has to lock rows to avoid lost updates. |
+| At-least-once delivery with idempotent consumers | A unique event id per stored row turns a redelivery into a no-op | Simpler than Kafka transactions, but every consumer must keep the check. |
+| Fraud rules use event time, not the clock | Catching up on a backlog gives the same scores as processing it live | Depends on per-payer ordering, which the key choice provides. |
+| Each service keeps its own copy of the event and ignores unknown fields | No shared library: services deploy independently, and the producer can add fields | Contract drift isn't caught at compile time. The end-to-end CI jobs catch it instead; a schema registry would be stronger. |
+| A dead-letter topic per consumer group | A bad record never blocks a partition, and each consumer fails independently | Dead letters need a separate process to inspect and replay them, which isn't built yet. |
+| Ledger postings lock accounts in name order, then the bank | No lost updates and no deadlocks when partitions share accounts | Postings to a busy account queue up behind each other. |
+| H2 in server mode and a single Kafka broker | A small, quick stack that runs on a laptop | Not production-grade: no replication, and H2 rather than PostgreSQL. |
+| The UI polls each service every 2 seconds | Simple, and needs nothing beyond nginx | Up to 2 seconds of delay. Server-sent events would push updates instead. |
+| nginx looks service names up on every request | The page loads while a service is down, and follows a restarted service to its new IP | A DNS lookup every 10 seconds, which is negligible here. |
+
+## Talking points
+
+Questions this project answers, with where to see each answer:
+
+- **What happens if a consumer goes down?** Its committed offset stays put and new events wait
+  in the topic. When it restarts it resumes from that offset and catches up.
+  `scripts/resilience_demo.py` shows it, and CI runs it on every pull request.
+- **What if Kafka delivers an event twice?** Both consumers store the event id with a unique
+  constraint and skip one they've already handled. Each consumer has an integration test that
+  redelivers an event and checks it isn't processed twice.
+- **What if an event can't be processed?** Malformed or incomplete events go straight to the
+  consumer's dead-letter topic. Other failures retry 3 times with backoff first. Either way the
+  partition keeps moving. See walkthrough step 4.
+- **What if Kafka is down when a user submits?** transaction-service saves the transaction, fails
+  to publish within about 10 seconds, and returns 503 with the transaction id. The publish log
+  records the failure. A transactional outbox would retry it automatically.
+- **How is ordering guaranteed?** Events are keyed by normalized payer, so one payer's events share
+  a partition and arrive in order. The velocity rule depends on this.
+- **How do two services get the same event?** Each is its own consumer group with its own offsets.
+  Adding a third consumer needs no change to the producer.
+- **How does the ledger stay correct when partitions share accounts?** Row locks, always taken in
+  the same order. A test sends 30 concurrent payments to one payee; with the locks removed, it
+  lost 11 of them.
+- **How would this scale?** Add partitions and run more instances per consumer group; Kafka
+  spreads the partitions across them. The row locks still protect shared accounts across
+  instances. The databases would move to PostgreSQL.
+- **How are the services kept independent?** A database and login per service, no HTTP calls
+  between services, and no shared code. Each owns its copy of the event contract.
+- **How is it tested?** Unit, web, JPA and embedded-Kafka tests per service, all at 100%
+  coverage with a 90% gate. CI also runs end-to-end tests against the full Docker Compose
+  stack: a smoke test, the scripted and resilience demos, and Playwright browser tests.
+
+## Explore each service
+
+### Transaction service
 
 ```bash
 # Create a transaction. The response includes the Kafka topic, partition, offset and key.
@@ -108,15 +271,12 @@ Responses:
 |---|---|---|
 | Saved and published | `201 Created` | The transaction, plus `kafka` details (status, partition, offset, key, payload) |
 | Invalid input | `400 Bad Request` | Problem detail with a `fieldErrors` map |
-| Kafka unreachable | `503 Service Unavailable` after about 10s | Problem detail with the `transactionId`. The transaction is saved, and its publish log entry is `FAILED`. |
+| Kafka unreachable | `503 Service Unavailable` within about 10s | Problem detail with the `transactionId`. The transaction is saved, and its publish log entry is `FAILED`. |
 
-To see the dual-write trade-off for yourself, run `docker compose stop kafka`, post a
-transaction, then run `docker compose start kafka` and list the transactions.
-
-## Watch the fraud service screen transactions
+### Fraud service
 
 fraud-service reads every `TransactionCreated` event and scores it against six fraud and AML
-rules. Post a few of these through the transaction service, then look at the assessments:
+rules:
 
 | Try | Rules triggered | Score |
 |---|---|---|
@@ -131,23 +291,12 @@ curl http://localhost:8082/api/risk/assessments/<txn-id> # one transaction's ass
 curl http://localhost:8082/api/risk/alerts               # MEDIUM and HIGH only
 ```
 
-Each assessment records the partition and offset it was read from. To see Kafka's
-consumer-group bookkeeping:
+Each assessment records the partition and offset it was read from.
 
-```bash
-docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server kafka:9092 --describe --group fraud-service
-```
+### Ledger service
 
-A record that isn't a valid event, such as malformed JSON, goes straight to
-`transactions.created.fraud-service.DLT` with `kafka_dlt-*` headers explaining why. Other
-failures are retried 3 times first. Either way the partition keeps moving.
-
-## Watch the ledger post double entries
-
-ledger-service reads the same events in its own consumer group and posts each one as a
-journal entry: a debit on the payer's account and an equal credit on the payee's. Post a
-transaction, then look at the ledger:
+ledger-service posts each event as a journal entry: a debit on the payer's account and an equal
+credit on the payee's.
 
 ```bash
 curl http://localhost:8083/api/ledger/accounts                           # every balance
@@ -157,13 +306,7 @@ curl http://localhost:8083/api/ledger/trial-balance                      # must 
 ```
 
 A payer's balance goes down and the payee's goes up by the same amount, so the trial balance
-always nets to zero. Because both consumers read the same event independently, the
-transaction also appears in fraud-service. To see that each group tracks its own offsets:
-
-```bash
-docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server kafka:9092 --describe --group ledger-service
-```
+always nets to zero.
 
 ## Run the tests
 
@@ -178,17 +321,17 @@ Each service has unit tests, web and JPA slice tests, and a full-stack test agai
 embedded Kafka broker. Both consumer suites cover redelivery (idempotency) and the
 dead-letter topic. The ledger suite also sends 30 concurrent payments to one payee and
 checks that no update is lost. The frontend's `check` type-checks the app, then runs Vitest
-and React Testing Library tests against a fake API, with the same 90% line-coverage gate. It
-is also at 100%, with its report in `frontend/coverage/index.html`.
+and React Testing Library tests against a fake API.
 
-`check` also runs a JaCoCo coverage gate: the build fails if line coverage drops below 90%.
-All three services are currently at 100%. Each service's report is in
-`build/reports/jacoco/test/html/index.html`.
+`check` also runs a coverage gate in every project: the build fails if line coverage drops
+below 90%. All four are currently at 100%. The reports are in each service's
+`build/reports/jacoco/test/html/index.html` and in `frontend/coverage/index.html`.
 
-To check the running stack end to end, run `python scripts/smoke_test.py`. It posts one
-transaction and waits for both consumers to process it. For the same check through the browser,
-the [Playwright tests](playwright/README.md) drive the web app: they send payments and demo
-scenarios and wait for each one to reach all three panels.
+Against the running stack:
+
+- `python scripts/smoke_test.py` posts one transaction and waits for both consumers to process it.
+- The [Playwright tests](playwright/README.md) drive the web app in a browser: they send payments
+  and demo scenarios and wait for each one to reach all three panels.
 
 ## Continuous integration
 
@@ -200,7 +343,7 @@ only if its part of the repo changed:
 |---|---|---|
 | Tests and coverage (*service*) | that service changed | `./gradlew check`: every test plus the 90% coverage gate |
 | Tests and coverage (frontend) | `frontend/` changed | `npm run check`: type-check, tests and the 90% coverage gate |
-| End-to-end (Docker Compose) | anything other than docs changed | builds and starts the whole stack, then runs the smoke test through the web app's proxy |
+| End-to-end (Docker Compose) | anything other than docs changed | builds and starts the whole stack, then runs the smoke test, the scripted demo and the resilience demo through the web app's proxy |
 | End-to-end (Playwright) | anything other than docs changed | builds and starts the whole stack, then runs the [Playwright browser tests](playwright/README.md) |
 
 Markdown files and the Bruno collection never trigger tests on their own. A change to the
@@ -220,6 +363,10 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server kafka:9092 --topic transactions.created --from-beginning \
   --formatter-property print.key=true --formatter-property print.partition=true \
   --formatter-property print.offset=true
+
+# Each consumer group's position on each partition
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --all-groups
 ```
 
 > On Git Bash for Windows, put `MSYS_NO_PATHCONV=1` in front of these commands so the
@@ -232,3 +379,7 @@ Topics:
 | `transactions.created` | 3 | Main event stream, keyed by payer |
 | `transactions.created.fraud-service.DLT` | 3 | Dead letters from fraud-service |
 | `transactions.created.ledger-service.DLT` | 3 | Dead letters from ledger-service |
+
+Every container has a health check, a restart policy and a memory limit. The Java services
+start only after Kafka and H2 are healthy. The web app starts straight away, so it can show
+which service is unreachable.
